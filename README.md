@@ -2,12 +2,13 @@
 
 A calm web app for your Roborock robot vacuum that runs on your own computer. It's built for a big screen, with a live map you can pan, zoom and turn in 3D, and it works on a phone too.
 
-![The app with the demo robot: status, passes and cleaning mode on the left, the live map on the right](docs/screenshot.png)
+![The app with the demo robot: status, cleaning mode, the dock and the main buttons on the left, the live map on the right](docs/screenshot.png)
 
 Try it without a robot or an account: `./start.command --demo`.
 
+- **One screen**: the robot's status, cleaning mode, the dock and the main buttons sit in one panel beside the map, so on a laptop nothing you need is below the fold. It's light by default; Dark and Auto (follows your Mac) are on the theme button and in Settings → Appearance.
 - **Live map** with room names, the robot and the dock. It updates every few seconds while the robot cleans.
-- **Click rooms** to clean just those, **drag a zone**, or **click a spot** to send the robot there. Pick the passes above the button: 1–3 for rooms and zones (set when they start), 1 or 2 when cleaning everywhere. That one is the robot's own setting, shared with the Roborock app, so you can change it mid-clean too.
+- **Click rooms** to clean just those, **drag a zone**, or **click a spot** to send the robot there (**Esc** lets go of it again). Pick the passes above the button: 1–3 for rooms and zones (set when they start), 1 or 2 when cleaning everywhere. That one is the robot's own setting, shared with the Roborock app, so you can change it mid-clean too.
 - **Move and zoom** the map like Google Maps: two-finger swipe, pinch, drag.
 - **Three views**: the colour map, a **3D view** you can turn around, and a **floor plan** with room sizes.
 - **What the robot saw**: carpets, obstacles it spotted (cables, shoes, pet mess…), where it mopped, and its route, on every view.
@@ -167,7 +168,7 @@ Python changes need a server restart. If the app notices code changed since it s
 | `maprender.py` | Turns the robot's raw map into a soft PNG, a room mask, and walls/zones for the editor |
 | `history.py` | Cleaning history: each run's coverage, and room freshness worked out from it |
 | `demo.py` | The simulated robot behind `--demo` |
-| `web/` | The interface in TypeScript: `main.ts` (start-up), `panels.ts` (sidebar), `session.ts` (sign-in, polling), `settings.ts`, `freshness.ts`, `map/` (map, pan & zoom, editor, views, fit), `map3d.ts` (3D) |
+| `web/` | The interface in TypeScript: `main.ts` (start-up), `panels.ts` (the control panel: status, mode, dock and the main buttons), `session.ts` (sign-in, polling), `settings.ts`, `freshness.ts`, `map/` (map, pan & zoom, editor, views, fit), `map3d.ts` (3D) |
 | `static/` | `index.html`, `styles.css`, and the built bundle in `dist/` |
 
 ## License

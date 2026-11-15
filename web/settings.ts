@@ -37,8 +37,8 @@ const sw = (action: string, on: boolean | null | undefined) =>
 const row = (iconName: string, title: string, sub: string | null, control: string) =>
   `<div class="row"><div class="row-main"><span class="row-icon">${icon(iconName)}</span><div><div class="row-title">${title}</div>${sub ? `<div class="row-sub">${sub}</div>` : ""}</div></div>${control}</div>`;
 
-const choice = (action: string, opt: Choice) =>
-  `<div class="seg small" style="margin-top:10px">${opt.options.map((o) => `<button data-choice="${action}" data-value="${esc(o)}" class="${o === opt.value ? "active" : ""}">${esc(OPT_LABEL[o] || human(o))}</button>`).join("")}</div>`;
+const choice = (action: string, opt: Choice, label: string) =>
+  `<div class="seg small" role="group" aria-label="${label}" style="margin-top:10px">${opt.options.map((o) => `<button data-choice="${action}" data-value="${esc(o)}" class="${o === opt.value ? "active" : ""}" aria-pressed="${o === opt.value}">${esc(OPT_LABEL[o] || human(o))}</button>`).join("")}</div>`;
 
 export function renderSettings(): void {
   const s = S.settings;
@@ -73,8 +73,8 @@ export function renderSettings(): void {
 
   // Dock
   let dock = "";
-  if (s.dust_mode) dock += `<div class="row stack"><div class="row-main"><span class="row-icon">${icon("trash")}</span><div><div class="row-title">Auto-empty</div><div class="row-sub">How hard the dock empties the dust bin</div></div></div>${choice("set_dust_mode", s.dust_mode)}</div>`;
-  if (s.wash_mode) dock += `<div class="row stack"><div class="row-main"><span class="row-icon">${icon("waves")}</span><div><div class="row-title">Mop washing</div><div class="row-sub">How thoroughly the dock washes the mop</div></div></div>${choice("set_wash_mode", s.wash_mode)}</div>`;
+  if (s.dust_mode) dock += `<div class="row stack"><div class="row-main"><span class="row-icon">${icon("trash")}</span><div><div class="row-title">Auto-empty</div><div class="row-sub">How hard the dock empties the dust bin</div></div></div>${choice("set_dust_mode", s.dust_mode, "Auto-empty")}</div>`;
+  if (s.wash_mode) dock += `<div class="row stack"><div class="row-main"><span class="row-icon">${icon("waves")}</span><div><div class="row-title">Mop washing</div><div class="row-sub">How thoroughly the dock washes the mop</div></div></div>${choice("set_wash_mode", s.wash_mode, "Mop washing")}</div>`;
   if (s.smart_wash) dock += row("spark", "Smart mop washing", "Let the robot decide when to rewash", sw("set_smart_wash", s.smart_wash.enabled));
   if (s.mop_dryer) {
     const h = s.mop_dryer.dry_time ? ` · ${Math.round(s.mop_dryer.dry_time / 3600)} h` : "";

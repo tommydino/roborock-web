@@ -35,7 +35,10 @@ export function viewImage(): string {
 
 export function syncViewChrome(): void {
   const is3d = S.viewMode === "3d";
-  $$("#view-modes button").forEach((b) => b.classList.toggle("active", b.dataset.view === S.viewMode));
+  $$("#view-modes button").forEach((b) => {
+    b.classList.toggle("active", b.dataset.view === S.viewMode);
+    b.setAttribute("aria-pressed", String(b.dataset.view === S.viewMode));
+  });
   inner.classList.toggle("plan", S.viewMode === "plan");
   inner.classList.toggle("fresh", S.viewMode === "fresh");
   renderFreshPanel();

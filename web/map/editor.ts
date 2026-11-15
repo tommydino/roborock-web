@@ -158,9 +158,12 @@ function renderEditChrome(): void {
   const tools = $("#edit-tools");
   tools.hidden = !e;
   if (e) {
-    $$("#edit-modes button").forEach((b) => b.classList.toggle("active", b.dataset.emode === e.mode));
+    $$("#edit-modes button").forEach((b) => {
+      b.classList.toggle("active", b.dataset.emode === e.mode);
+      b.setAttribute("aria-pressed", String(b.dataset.emode === e.mode));
+    });
     tools.innerHTML = EDIT_TOOLS[e.mode]
-      .map(([t, ic, label]) => `<button data-etool="${t}" class="${e.tool === t ? "active" : ""}" title="${label}">${icon(ic)}<span>${label}</span></button>`)
+      .map(([t, ic, label]) => `<button data-etool="${t}" class="${e.tool === t ? "active" : ""}" aria-pressed="${e.tool === t}" title="${label}">${icon(ic)}<span>${label}</span></button>`)
       .join("");
   }
   syncInnerClasses();

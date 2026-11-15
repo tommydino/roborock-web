@@ -262,7 +262,10 @@ export function setTool(tool: Tool): void {
   }
   S.tool = tool;
   S.hover = 0;
-  $$("#map-tools button").forEach((b) => b.classList.toggle("active", b.dataset.tool === tool));
+  $$("#map-tools button").forEach((b) => {
+    b.classList.toggle("active", b.dataset.tool === tool);
+    b.setAttribute("aria-pressed", String(b.dataset.tool === tool));
+  });
   syncInnerClasses();
   applyView();
   refreshMapOverlays();

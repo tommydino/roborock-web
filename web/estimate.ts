@@ -42,12 +42,18 @@ function fmtTime(s: number): string {
 
 const doneBy = (s: number) => new Date(Date.now() + s * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
-/** "About 18 min · done by 14:35" for cleaning this many m², or null without history. */
-export function estimateText(area: number, passes = 1): string | null {
+/** "18 min" and "14:35" for cleaning this many m², or null without history. */
+export function estimateParts(area: number, passes = 1): { time: string; by: string } | null {
   const f = fitFor(S.status?.mode?.cleaning);
   if (!f || area <= 0) return null;
   const s = f.overhead + f.rate * area * passes;
-  return `About ${fmtTime(s)} · done by ${doneBy(s)}`;
+  return { time: fmtTime(s), by: doneBy(s) };
+}
+
+/** "About 18 min · done by 14:35" for cleaning this many m², or null without history. */
+export function estimateText(area: number, passes = 1): string | null {
+  const e = estimateParts(area, passes);
+  return e ? `About ${e.time} · done by ${e.by}` : null;
 }
 
 /** Seconds left in the run going on now, or null when there's no good guess. */

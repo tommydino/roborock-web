@@ -9,6 +9,7 @@ import {
 } from "./map/editor";
 import { centerOnRobot, resetView } from "./map/panzoom";
 import { get3D, setViewMode, show3D, syncViewChrome } from "./map/views";
+import { renderFreshPanel } from "./freshness";
 import { setNotify } from "./notify";
 import { doAction, renderActions, renderSkeletons, renderStatus, setHomePasses, setModeValue } from "./panels";
 import { logout, reconnect, refreshAuth, startLoops } from "./session";
@@ -31,7 +32,10 @@ document.addEventListener("click", async (e) => {
 
   if (ds.tab) {
     S.tab = ds.tab === "settings" ? "settings" : "home";
-    $$(".tabs button").forEach((b) => b.classList.toggle("active", b === t));
+    $$(".tabs button").forEach((b) => {
+      b.classList.toggle("active", b === t);
+      b.setAttribute("aria-current", b === t ? "page" : "false");
+    });
     $("#tab-home").hidden = S.tab !== "home";
     $("#tab-settings").hidden = S.tab !== "settings";
     if (S.tab === "settings") void loadSettings();
@@ -110,15 +114,28 @@ document.addEventListener("click", async (e) => {
     case "room-reset-name":
       return renameRoom("", t);
     case "clear-sel":
-      S.selected = [];
-      S.zone = null;
-      S.pin = null;
-      return refreshMapOverlays();
+      return clearPicks();
     default:
       if (act === "stop" && S.status?.job && !confirm("Stop the current cleaning job?")) return;
       doAction(act, {}, { button: t }).catch(() => {});
   }
 });
+
+// Escape lets go of the rooms, zone or spot picked on the map (the editor has its own keys).
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "Escape" || S.edit || S.tab !== "home" || closest(e.target, "input, select, textarea")) return;
+  if (!S.selected.length && !S.zone && !S.pin) return;
+  clearPicks();
+});
+
+function clearPicks(): void {
+  S.selected = [];
+  S.zone = null;
+  S.pin = null;
+  S.drag = null; // a zone still being dragged out
+  refreshMapOverlays();
+  renderFreshPanel(); // its room rows show what's picked too
+}
 
 $<HTMLSelectElement>("#device-select").addEventListener("change", (e) => {
   S.duid = (e.target as HTMLSelectElement).value;
