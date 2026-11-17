@@ -641,3 +641,5 @@ svg.i.tiny { width: 12px; height: 12px; }
 .history-compare select { max-width: 220px; padding: 7px 9px; border: 1px solid var(--line); border-radius: 7px; background: var(--bg); color: var(--text); }
 .history-diff { margin: 10px 0; padding: 10px 12px; border-radius: 8px; background: var(--bg); }
 .history-diff ul { margin: 6px 0 0; padding-left: 20px; }
+
+.app-setting-select { width: 100%; max-width: 280px; margin: 12px 0 0 44px; }
