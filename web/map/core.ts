@@ -36,6 +36,7 @@ export async function decodeMask(src: string): Promise<Mask> {
 
 const snapshotKey = (duid: string) => `roborock-map-snapshots-${duid}`;
 let viewedSnapshot: MapSnapshot | null = null;
+let comparisonIds: [string, string] | null = null;
 
 function readSnapshots(): MapSnapshot[] {
   if (!S.duid) return [];
@@ -69,14 +70,58 @@ function rememberMap(map: MapPayload): MapSnapshot[] {
   return next;
 }
 
+function snapshotLabel(snapshot: MapSnapshot): string {
+  return `${new Date(snapshot.created_at).toLocaleString()} · ${snapshot.rooms.length} rooms`;
+}
+
+function comparisonSummary(older: MapSnapshot, newer: MapSnapshot): string {
+  const roomNames = (snapshot: MapSnapshot) => new Map(snapshot.rooms.map((room) => [room.id, room.name]));
+  const before = roomNames(older);
+  const after = roomNames(newer);
+  const changes: string[] = [];
+  for (const [id, name] of after) {
+    if (!before.has(id)) changes.push(`Added room: ${name}`);
+    else if (before.get(id) !== name) changes.push(`Room renamed: ${before.get(id)} → ${name}`);
+  }
+  for (const [id, name] of before) if (!after.has(id)) changes.push(`Removed room: ${name}`);
+  const count = (snapshot: MapSnapshot, type: string) => snapshot.restrictions.filter((item) => item.type === type).length;
+  for (const [type, label] of [["wall", "walls"], ["no_go", "no-go zones"], ["no_mop", "no-mop zones"]] as const) {
+    const delta = count(newer, type) - count(older, type);
+    if (delta) changes.push(`${Math.abs(delta)} ${label} ${delta > 0 ? "added" : "removed"}`);
+  }
+  const roomDelta = newer.rooms.length - older.rooms.length;
+  if (roomDelta) changes.push(`${Math.abs(roomDelta)} rooms ${roomDelta > 0 ? "added" : "removed"} in total`);
+  return changes.length ? changes.map((change) => `<li>${esc(change)}</li>`).join("") : "<li>No room or restriction changes found.</li>";
+}
+
+export function compareMapSnapshots(olderId: string, newerId: string): void {
+  const snapshots = readSnapshots();
+  const older = snapshots.find((item) => item.id === olderId);
+  const newer = snapshots.find((item) => item.id === newerId);
+  if (!older || !newer || older.id === newer.id) return;
+  comparisonIds = [older.id, newer.id];
+  renderSnapshots();
+}
+
 function renderSnapshots(): void {
   const panel = $("#map-history");
   const snapshots = readSnapshots();
+  const options = snapshots.map((item) => `<option value="${esc(item.id)}">${esc(snapshotLabel(item))}</option>`).join("");
+  const oldId = comparisonIds?.[0] ?? snapshots[0]?.id ?? "";
+  const newId = comparisonIds?.[1] ?? snapshots.at(-1)?.id ?? "";
+  const older = snapshots.find((item) => item.id === oldId);
+  const newer = snapshots.find((item) => item.id === newId);
   panel.hidden = false;
   panel.innerHTML = `<div class="history-head"><b>Map history</b><button class="btn-soft" data-act="history-close">Close</button></div>
-    <p class="muted">Saved on this device. Selecting a version previews it without changing the robot.</p>
+    <p class="muted">Saved on this device. Select a version to preview it without changing the robot.</p>
+    <div class="history-compare">
+      <label>Before<select id="history-before">${options}</select></label>
+      <label>After<select id="history-after">${options}</select></label>
+      <button class="btn-soft" data-act="history-compare" ${snapshots.length < 2 ? "disabled" : ""}>Compare</button>
+    </div>
+    ${comparisonIds && older && newer ? `<div class="history-diff"><b>Changes</b><ul>${comparisonSummary(older, newer)}</ul></div>` : ""}
     ${snapshots.map((item) => `<button class="history-item ${viewedSnapshot?.id === item.id ? "active" : ""}" data-snapshot="${esc(item.id)}">
-      <span>${new Date(item.created_at).toLocaleString()}</span><small>${item.rooms.length} rooms · ${item.width} × ${item.height}</small>
+      <span>${esc(snapshotLabel(item))}</span><small>${item.width} × ${item.height}</small>
     </button>`).join("") || '<span class="muted">No saved map versions yet.</span>'}
     ${viewedSnapshot ? `<div class="history-preview"><img src="${viewedSnapshot.base}" alt="Previous map"><div>${viewedSnapshot.rooms.map((room) => esc(room.name)).join(", ")}</div></div>` : ""}
     <button class="btn-soft" data-act="history-toggle">Return to live map</button>`;
