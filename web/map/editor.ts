@@ -335,6 +335,28 @@ function doorwayLine(p: Point, room: number): [Pt, Pt] | null {
     return null;
   };
 
+  // Match the demo's minimum side size. A short span along the edge of a
+  // room can look like a doorway but leave almost the entire room on one side.
+  const dividesRoom = (a: Pt, b: Pt): boolean => {
+    const minSide = 40;
+    const [ax, ay] = a.map((value) => value / scale);
+    const [bx, by] = b.map((value) => value / scale);
+    let left = 0;
+    let right = 0;
+    for (let row = 0; row < h; row++) {
+      for (let col = 0; col < w; col++) {
+        const i = (row * w + col) * 4;
+        if (!data[i + 3] || data[i] !== room) continue;
+        const cross = (bx - ax) * (row - ay) - (by - ay) * (col - ax);
+        // Map pixels have Y down, while the robot uses Y up.
+        if (cross < 0) left++;
+        else right++;
+        if (left >= minSide && right >= minSide) return true;
+      }
+    }
+    return false;
+  };
+
   let best: [Pt, Pt] | null = null;
   let bestWidth = Infinity;
   for (let direction = 0; direction < 16; direction++) {
@@ -344,9 +366,17 @@ function doorwayLine(p: Point, room: number): [Pt, Pt] | null {
     const a = wallAt(dx, dy);
     const b = wallAt(-dx, -dy);
     if (!a || !b) continue;
-    const width = Math.hypot(a[0] - b[0], a[1] - b[1]) * mmPerPixel / scale;
+    const span = Math.hypot(a[0] - b[0], a[1] - b[1]);
+    const width = span * mmPerPixel / scale;
     if (width < 450 || width > 1600 || width >= bestWidth) continue;
-    best = [a, b];
+    // Put the endpoints beyond the first wall pixels without changing the angle.
+    const overhang = 2 * scale / span;
+    const offsetX = (a[0] - b[0]) * overhang;
+    const offsetY = (a[1] - b[1]) * overhang;
+    const start: Pt = [a[0] + offsetX, a[1] + offsetY];
+    const end: Pt = [b[0] - offsetX, b[1] - offsetY];
+    if (!dividesRoom(start, end)) continue;
+    best = [start, end];
     bestWidth = width;
   }
   return best;
@@ -458,7 +488,7 @@ export function editPointerUp(e: PointerEvent, g: EditGesture): void {
       const id = roomAt(p);
       ed.rooms = id ? [id] : [];
       ed.line = doorwayLine(p, id);
-      if (id && !ed.line) toast("No doorway-sized gap found here. Tap the centre of the opening or drag a line.");
+      if (id && !ed.line) toast("No valid split found here. Tap the centre of the opening or drag a line from wall to wall.");
     } else {
       ed.line = [g.a, [p.x, p.y]];
       if (!ed.rooms.length) {
