@@ -121,6 +121,24 @@ export function renderSettings(): void {
     <div class="row stack"><div class="row-main"><span class="row-icon">${icon("contrast")}</span><div><div class="row-title">Theme</div><div class="row-sub">Auto follows your Mac's light or dark setting</div></div></div>${themeChoice()}</div>
     ${row("spark", "SmartPlan", "Offer SmartPlan in Cleaning mode", sw("smartplan", smartPlanShown()))}</div>`);
 
+  const refreshSeconds = (() => {
+    try {
+      const value = Number(localStorage.getItem("map-refresh-seconds"));
+      return [10, 20, 30, 60].includes(value) ? value : 20;
+    } catch { return 20; }
+  })();
+  cards.push(`<div class="card"><div class="card-head"><h3 class="card-title">${icon("layers")}App</h3></div>
+    <div class="row stack"><div class="row-main"><span class="row-icon">${icon("history")}</span><div><div class="row-title">Map refresh</div><div class="row-sub">While idle. During cleaning, the map updates more often.</div></div></div>
+      <select id="map-refresh-setting" class="field app-setting-select">
+        <option value="10" ${refreshSeconds === 10 ? "selected" : ""}>Every 10 seconds</option>
+        <option value="20" ${refreshSeconds === 20 ? "selected" : ""}>Every 20 seconds</option>
+        <option value="30" ${refreshSeconds === 30 ? "selected" : ""}>Every 30 seconds</option>
+        <option value="60" ${refreshSeconds === 60 ? "selected" : ""}>Every minute</option>
+      </select>
+    </div>
+    <div class="row"><div class="row-main"><span class="row-icon">${icon("trash")}</span><div><div class="row-title">Saved map versions</div><div class="row-sub">Stored in this browser for each robot.</div></div></div><button class="btn-soft danger" data-act="clear-map-history">Clear</button></div>
+  </div>`);
+
   // About
   const d = s.device ?? {};
   const n = s.network ?? {};
@@ -222,4 +240,11 @@ document.addEventListener("change", async (e) => {
   } catch {
     t.checked = !on;
   }
+});
+
+document.addEventListener("change", (event) => {
+  const target = event.target;
+  if (!(target instanceof HTMLSelectElement) || target.id !== "map-refresh-setting") return;
+  try { localStorage.setItem("map-refresh-seconds", target.value); } catch { /* setting applies until reload */ }
+  toast(`Map refresh set to every ${target.value} seconds while idle`);
 });
