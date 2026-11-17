@@ -199,8 +199,14 @@ export function startLoops(): void {
   void pollMap(true);
   if (loopsStarted) return;
   loopsStarted = true;
-  setInterval(() => !document.hidden && void pollStatus(), 2500);
-  setInterval(() => !document.hidden && void pollMap(), 1000);
+  const poll = () => {
+    if (!document.hidden) {
+      void pollStatus();
+      void pollMap();
+    }
+    window.setTimeout(poll, refreshInterval());
+  };
+  window.setTimeout(poll, refreshInterval());
   document.addEventListener("visibilitychange", () => {
     if (document.hidden) return;
     void pollStatus();
@@ -233,6 +239,15 @@ function warmUp(): void {
   setTimeout(() => {
     if (!S.settings && S.tab !== "settings") void loadSettings();
   }, 3000);
+}
+
+function refreshInterval(): number {
+  try {
+    const value = Number(localStorage.getItem("map-refresh-seconds"));
+    return [10, 20, 30, 60].includes(value) ? value * 1000 : 20000;
+  } catch {
+    return 20000;
+  }
 }
 
 function mapInterval(): number {
