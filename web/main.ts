@@ -1,7 +1,7 @@
 // Entry point: global button handling and start-up.
 
 import { $, $$, $opt, closest, icon } from "./dom";
-import { closeMapHistory, mapEmpty, previewMapSnapshot, refreshMapOverlays, showMapHistory } from "./map/core";
+import { closeMapHistory, compareMapSnapshots, mapEmpty, previewMapSnapshot, refreshMapOverlays, showMapHistory } from "./map/core";
 import { fitMap } from "./map/fit";
 import {
   clearEditPicks, deleteSelected, discardEdits, endEdit, mergeRooms, renameRoom, saveRestrictions,
@@ -92,6 +92,8 @@ document.addEventListener("click", async (e) => {
       return;
     case "history-open":
       return showMapHistory();
+    case "history-compare":
+      return compareMapSnapshots($("#history-before").value, $("#history-after").value);
     case "history-close":
     case "history-toggle":
       return closeMapHistory();
