@@ -70,6 +70,16 @@ function rememberMap(map: MapPayload): MapSnapshot[] {
   return next;
 }
 
+export function clearMapHistory(): void {
+  if (!S.duid) return;
+  try { localStorage.removeItem(snapshotKey(S.duid)); } catch { /* storage may be unavailable */ }
+  viewedSnapshot = null;
+  comparisonIds = null;
+  $("#map-history").hidden = true;
+  $("#map-history-open").hidden = true;
+  toast("Saved map versions cleared");
+}
+
 export function saveMapSnapshotBeforeEdit(): void {
   if (!S.map || !S.map.base) return;
   rememberMap(S.map);
