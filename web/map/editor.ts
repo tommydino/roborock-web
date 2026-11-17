@@ -308,56 +308,30 @@ export function clearEditPicks(): void {
 
 /* ---- gestures (called from the map's pointer handling) ---- */
 
-/** Extend a click through the room along the closest clear wall-to-wall axis. */
-function doorwayLine(p: Point, room: number): [Pt, Pt] | null {
-  const m = S.map;
+/** Extend a user-drawn split line beyond the selected room boundary. */
+function extendSplitLine(line: [Pt, Pt], room: number): [Pt, Pt] | null {
   const mask = S.mask;
-  if (!m?.frame || !mask || !room) return null;
-  const { w, h, data } = mask;
-  const { scale } = m;
-  if (!(scale > 0)) return null;
-  const col = Math.floor(p.x / scale);
-  const row = Math.floor(p.y / scale);
-  if (col < 0 || row < 0 || col >= w || row >= h) return null;
-  const startIndex = (row * w + col) * 4;
-  if (data[startIndex] !== room || !data[startIndex + 3]) return null;
-
-  // Use a generous endpoint margin. The robot rejects split commands whose
-  // line stops inside a room, even when the preview looks visually complete.
-  const margin = 12;
-  const candidates: { line: [Pt, Pt]; distance: number }[] = [];
-  const directions: [number, number][] = [[1, 0], [0, 1]];
-  for (const [dx, dy] of directions) {
-    let first = Infinity;
-    let last = -Infinity;
-    for (let y = 0; y < h; y++) {
-      for (let x = 0; x < w; x++) {
-        const index = (y * w + x) * 4;
-        if (!data[index + 3] || data[index] !== room) continue;
-        const cross = dx ? Math.abs(y - row) : Math.abs(x - col);
-        const along = dx ? x : y;
-        if (cross > 2) continue;
-        first = Math.min(first, along);
-        last = Math.max(last, along);
-      }
-    }
-    if (!Number.isFinite(first) || last - first < 4) continue;
-    const a: Pt = dx
-      ? [(first - margin) * scale, (row + 0.5) * scale]
-      : [(col + 0.5) * scale, (first - margin) * scale];
-    const b: Pt = dx
-      ? [(last + margin) * scale, (row + 0.5) * scale]
-      : [(col + 0.5) * scale, (last + margin) * scale];
-    candidates.push({ line: [a, b], distance: crossDistance(p, a, b) });
+  const scale = S.map?.scale;
+  if (!mask || !scale || !room) return null;
+  const [[x0,y0],[x1,y1]] = line;
+  const dx=x1-x0, dy=y1-y0, length=Math.hypot(dx,dy);
+  if (length < 4*scale) return null;
+  const ux=dx/length, uy=dy/length;
+  let tMin=Infinity, tMax=-Infinity;
+  const {w,h,data}=mask;
+  for(let y=0;y<h;y++) for(let x=0;x<w;x++) {
+    const i=(y*w+x)*4;
+    if(!data[i+3] || data[i]!==room) continue;
+    const px=(x+0.5)*scale, py=(y+0.5)*scale;
+    const t=(px-x0)*ux+(py-y0)*uy;
+    const distance=Math.abs((px-x0)*uy-(py-y0)*ux);
+    if(distance>2*scale) continue;
+    tMin=Math.min(tMin,t);
+    tMax=Math.max(tMax,t);
   }
-  candidates.sort((a, b) => a.distance - b.distance);
-  return candidates[0]?.line ?? null;
-}
-
-function crossDistance(p: Point, a: Pt, b: Pt): number {
-  const dx = b[0] - a[0];
-  const dy = b[1] - a[1];
-  return Math.abs(dx * (p.y - a[1]) - dy * (p.x - a[0])) / Math.hypot(dx, dy);
+  if(!Number.isFinite(tMin) || tMax-tMin<4*scale) return null;
+  const margin=12*scale;
+  return [[x0+ux*(tMin-margin),y0+uy*(tMin-margin)],[x0+ux*(tMax+margin),y0+uy*(tMax+margin)]];
 }
 
 /** Start an edit gesture, or return null to let the map pan. */
@@ -465,14 +439,14 @@ export function editPointerUp(e: PointerEvent, g: EditGesture): void {
     if (Math.hypot(e.clientX - g.x0, e.clientY - g.y0) < 6) {
       const id = roomAt(p);
       ed.rooms = id ? [id] : [];
-      ed.line = doorwayLine(p, id);
-      if (id && !ed.line) toast("Could not extend a line through this room. Drag one from wall to wall.");
+      ed.line = null;
+      if (id) toast("Drag from the doorway across the room to set the split direction.");
     } else {
-      ed.line = [g.a, [p.x, p.y]];
-      if (!ed.rooms.length) {
-        const id = roomAt({ x: (g.a[0] + p.x) / 2, y: (g.a[1] + p.y) / 2 });
-        if (id) ed.rooms = [id];
-      }
+      const id = ed.rooms[0] || roomAt(g.a);
+      ed.rooms = id ? [id] : [];
+      const drawn: [Pt, Pt] = [g.a, [p.x, p.y]];
+      ed.line = id ? extendSplitLine(drawn, id) : null;
+      if (id && !ed.line) toast("Drag farther through the room to set the split direction.");
     }
     refreshMapOverlays();
     return;
@@ -524,7 +498,7 @@ export function renderEditFoot(): void {
       ed.line && ed.rooms.length
         ? `<span class="hint">Split <b>${esc(roomName(ed.rooms[0]))}</b> along the line.${hasPreview ? " The colours show the estimated split." : ""}</span>
          <div class="foot-actions"><button class="btn-soft" data-act="edit-clear">Clear line</button><button class="btn-small-primary" data-act="room-split">Split room</button></div>`
-        : `<span class="hint">Click in the doorway to extend a line across the room, or drag one yourself.</span>`;
+        : `<span class="hint">Drag from the doorway across the room. The line extends past the room edges.</span>`;
   } else {
     const id = ed.rooms[0];
     if (!id) {
