@@ -9,7 +9,7 @@ import { doAction } from "../panels";
 import { pollMap } from "../session";
 import { S, type EditItem, type EditTool, type Pt } from "../state";
 import type { Point, RestrictionType } from "../types";
-import { refreshMapOverlays, renderMapFoot, roomAt, toBase } from "./core";
+import { refreshMapOverlays, renderMapFoot, roomAt, saveMapSnapshotBeforeEdit, toBase } from "./core";
 import { inner, shapesSvg } from "./elements";
 import { applyView } from "./panzoom";
 import { setViewMode } from "./views";
@@ -502,6 +502,7 @@ export async function mergeRooms(btn: HTMLButtonElement): Promise<void> {
   if (!ed || ed.rooms.length !== 2) return;
   const [a, b] = ed.rooms;
   if (!confirm(`Merge ${roomName(a)} and ${roomName(b)} into one room?\n\nThis changes the map on your robot. You can split it again later.`)) return;
+  saveMapSnapshotBeforeEdit();
   try {
     await doAction("merge_rooms", { rooms: [a, b] }, { button: btn, okMsg: "Rooms merged" });
     ed.rooms = [];
@@ -518,6 +519,7 @@ export async function splitRoom(btn: HTMLButtonElement): Promise<void> {
   const room = ed.rooms[0];
   const [[x0, y0], [x1, y1]] = ed.line;
   if (!confirm(`Split ${roomName(room)} along the line?\n\nThis changes the map on your robot. You can merge the parts again later.`)) return;
+  saveMapSnapshotBeforeEdit();
   try {
     await doAction("split_room", { room, line: [...pxToMm(x0, y0), ...pxToMm(x1, y1)] }, { button: btn, okMsg: "Room split" });
     Object.assign(ed, { line: null, rooms: [] });
