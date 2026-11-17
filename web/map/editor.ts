@@ -308,78 +308,56 @@ export function clearEditPicks(): void {
 
 /* ---- gestures (called from the map's pointer handling) ---- */
 
-/** Find the shortest doorway-sized span between two mapped walls near a tap. */
+/** Extend a click through the room along the closest clear wall-to-wall axis. */
 function doorwayLine(p: Point, room: number): [Pt, Pt] | null {
   const m = S.map;
   const mask = S.mask;
   if (!m?.frame || !mask || !room) return null;
   const { w, h, data } = mask;
   const { scale } = m;
-  const x = p.x / scale;
-  const y = p.y / scale;
-  const mmPerPixel = m.frame.mm;
-  if (!(mmPerPixel > 0) || !(scale > 0)) return null;
-  const maxWidth = 1600 / mmPerPixel;
+  if (!(scale > 0)) return null;
+  const col = Math.floor(p.x / scale);
+  const row = Math.floor(p.y / scale);
+  if (col < 0 || row < 0 || col >= w || row >= h) return null;
+  const startIndex = (row * w + col) * 4;
+  if (data[startIndex] !== room || !data[startIndex + 3]) return null;
 
-  const wallAt = (dx: number, dy: number): Pt | null => {
-    for (let distance = 0; distance <= maxWidth; distance += 0.5) {
-      const col = Math.floor(x + dx * distance);
-      const row = Math.floor(y + dy * distance);
-      if (col < 0 || col >= w || row < 0 || row >= h) return null;
-      const i = (row * w + col) * 4;
-      if (!data[i + 3]) return null;
-      if (data[i] === room) continue;
-      const isWall = data[i] === 0 && (data[i + 1] === 1 || data[i + 1] === 2);
-      return isWall ? [(col + 0.5) * scale, (row + 0.5) * scale] : null;
-    }
-    return null;
-  };
-
-  // Match the demo's minimum side size. A short span along the edge of a
-  // room can look like a doorway but leave almost the entire room on one side.
-  const dividesRoom = (a: Pt, b: Pt): boolean => {
-    const minSide = 40;
-    const [ax, ay] = a.map((value) => value / scale);
-    const [bx, by] = b.map((value) => value / scale);
-    let left = 0;
-    let right = 0;
-    for (let row = 0; row < h; row++) {
-      for (let col = 0; col < w; col++) {
-        const i = (row * w + col) * 4;
-        if (!data[i + 3] || data[i] !== room) continue;
-        const cross = (bx - ax) * (row - ay) - (by - ay) * (col - ax);
-        // Map pixels have Y down, while the robot uses Y up.
-        if (cross < 0) left++;
-        else right++;
-        if (left >= minSide && right >= minSide) return true;
+  // Use a generous endpoint margin. The robot rejects split commands whose
+  // line stops inside a room, even when the preview looks visually complete.
+  const margin = 12;
+  const candidates: { line: [Pt, Pt]; distance: number }[] = [];
+  const directions: [number, number][] = [[1, 0], [0, 1]];
+  for (const [dx, dy] of directions) {
+    let first = Infinity;
+    let last = -Infinity;
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const index = (y * w + x) * 4;
+        if (!data[index + 3] || data[index] !== room) continue;
+        const cross = dx ? Math.abs(y - row) : Math.abs(x - col);
+        const along = dx ? x : y;
+        if (cross > 2) continue;
+        first = Math.min(first, along);
+        last = Math.max(last, along);
       }
     }
-    return false;
-  };
-
-  let best: [Pt, Pt] | null = null;
-  let bestWidth = Infinity;
-  for (let direction = 0; direction < 16; direction++) {
-    const angle = direction * Math.PI / 16;
-    const dx = Math.cos(angle);
-    const dy = Math.sin(angle);
-    const a = wallAt(dx, dy);
-    const b = wallAt(-dx, -dy);
-    if (!a || !b) continue;
-    const span = Math.hypot(a[0] - b[0], a[1] - b[1]);
-    const width = span * mmPerPixel / scale;
-    if (width < 450 || width > 1600 || width >= bestWidth) continue;
-    // Put the endpoints beyond the first wall pixels without changing the angle.
-    const overhang = 2 * scale / span;
-    const offsetX = (a[0] - b[0]) * overhang;
-    const offsetY = (a[1] - b[1]) * overhang;
-    const start: Pt = [a[0] + offsetX, a[1] + offsetY];
-    const end: Pt = [b[0] - offsetX, b[1] - offsetY];
-    if (!dividesRoom(start, end)) continue;
-    best = [start, end];
-    bestWidth = width;
+    if (!Number.isFinite(first) || last - first < 4) continue;
+    const a: Pt = dx
+      ? [(first - margin) * scale, (row + 0.5) * scale]
+      : [(col + 0.5) * scale, (first - margin) * scale];
+    const b: Pt = dx
+      ? [(last + margin) * scale, (row + 0.5) * scale]
+      : [(col + 0.5) * scale, (last + margin) * scale];
+    candidates.push({ line: [a, b], distance: crossDistance(p, a, b) });
   }
-  return best;
+  candidates.sort((a, b) => a.distance - b.distance);
+  return candidates[0]?.line ?? null;
+}
+
+function crossDistance(p: Point, a: Pt, b: Pt): number {
+  const dx = b[0] - a[0];
+  const dy = b[1] - a[1];
+  return Math.abs(dx * (p.y - a[1]) - dy * (p.x - a[0])) / Math.hypot(dx, dy);
 }
 
 /** Start an edit gesture, or return null to let the map pan. */
@@ -488,7 +466,7 @@ export function editPointerUp(e: PointerEvent, g: EditGesture): void {
       const id = roomAt(p);
       ed.rooms = id ? [id] : [];
       ed.line = doorwayLine(p, id);
-      if (id && !ed.line) toast("No valid split found here. Tap the centre of the opening or drag a line from wall to wall.");
+      if (id && !ed.line) toast("Could not extend a line through this room. Drag one from wall to wall.");
     } else {
       ed.line = [g.a, [p.x, p.y]];
       if (!ed.rooms.length) {
@@ -546,7 +524,7 @@ export function renderEditFoot(): void {
       ed.line && ed.rooms.length
         ? `<span class="hint">Split <b>${esc(roomName(ed.rooms[0]))}</b> along the line.${hasPreview ? " The colours show the estimated split." : ""}</span>
          <div class="foot-actions"><button class="btn-soft" data-act="edit-clear">Clear line</button><button class="btn-small-primary" data-act="room-split">Split room</button></div>`
-        : `<span class="hint">Tap the centre of a doorway to suggest a split, or drag a line from wall to wall.</span>`;
+        : `<span class="hint">Click in the doorway to extend a line across the room, or drag one yourself.</span>`;
   } else {
     const id = ed.rooms[0];
     if (!id) {
