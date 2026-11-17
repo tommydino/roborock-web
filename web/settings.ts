@@ -128,7 +128,7 @@ export function renderSettings(): void {
     } catch { return 20; }
   })();
   cards.push(`<div class="card"><div class="card-head"><h3 class="card-title">${icon("layers")}App</h3></div>
-    <div class="row stack"><div class="row-main"><span class="row-icon">${icon("history")}</span><div><div class="row-title">Map refresh</div><div class="row-sub">While idle. During cleaning, the map updates more often.</div></div></div>
+    <div class="row stack"><div class="row-main"><span class="row-icon">${icon("history")}</span><div><div class="row-title">Robot and map refresh</div><div class="row-sub">While idle. During cleaning, updates are more frequent.</div></div></div>
       <select id="map-refresh-setting" class="field app-setting-select">
         <option value="10" ${refreshSeconds === 10 ? "selected" : ""}>Every 10 seconds</option>
         <option value="20" ${refreshSeconds === 20 ? "selected" : ""}>Every 20 seconds</option>
