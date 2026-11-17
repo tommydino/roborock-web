@@ -117,7 +117,6 @@ export function endEdit(force = false): void {
   if (!S.edit) return;
   if (!force && S.edit.dirty && !confirm("Discard your unsaved wall and zone changes?")) return;
   S.edit = null;
-  splitPreview = undefined;
   S.hover = 0;
   renderEditChrome();
   applyView();
@@ -169,46 +168,6 @@ function renderEditChrome(): void {
 
 /* ---- drawing walls and zones ---- */
 
-// The room mask stores the room ID in the red channel. Colour only pixels
-// belonging to the selected room and leave the rest of the map visible.
-let splitPreview: { mask: typeof S.mask; line: [Pt, Pt]; room: number; scale: number; svg: string } | undefined;
-
-function renderSplitPreview(line: [Pt, Pt], room: number, scale: number): string {
-  const mask = S.mask;
-  if (!mask || !room) return "";
-  if (splitPreview?.mask === mask && splitPreview.line === line &&
-      splitPreview.room === room && splitPreview.scale === scale) return splitPreview.svg;
-
-  const [[x0, y0], [x1, y1]] = line;
-  const dx = x1 - x0;
-  const dy = y1 - y0;
-  const paths: [string[], string[], string[]] = [[], [], []];
-  const { w, h, data } = mask;
-  for (let y = 0; y < h; y++) {
-    let side = 0;
-    let start = 0;
-    for (let x = 0; x <= w; x++) {
-      const pixel = (y * w + x) * 4;
-      const next = x < w && data[pixel + 3] && data[pixel] === room
-        ? (dx * ((y + 0.5) * scale - y0) - dy * ((x + 0.5) * scale - x0) >= 0 ? 1 : 2)
-        : 0;
-      if (next === side) continue;
-      if (side) paths[side].push(`M${start} ${y}h${x - start}v1H${start}Z`);
-      start = x;
-      side = next;
-    }
-  }
-
-  const svg = paths[1].length && paths[2].length
-    ? `<g aria-hidden="true" pointer-events="none" opacity=".52" transform="scale(${scale})">
-         <path fill="#2474e0" d="${paths[1].join("")}"/>
-         <path fill="#d97c12" d="${paths[2].join("")}"/>
-       </g>`
-    : "";
-  splitPreview = { mask, line, room, scale, svg };
-  return svg;
-}
-
 export function renderShapes(): void {
   const m = S.map;
   if (!m?.frame) {
@@ -244,7 +203,6 @@ export function renderShapes(): void {
         : `<g class="shape ${type} draft"><polygon points="${rectPx(a[0], a[1], b[0], b[1]).map((p) => p.join(",")).join(" ")}"/></g>`;
   }
   if (e?.line) {
-    svg += renderSplitPreview(e.line, e.rooms[0], m.scale);
     const [[x0, y0], [x1, y1]] = e.line;
     svg += `<line class="split-line" x1="${x0}" y1="${y0}" x2="${x1}" y2="${y1}"/>`;
   }
@@ -307,32 +265,6 @@ export function clearEditPicks(): void {
 }
 
 /* ---- gestures (called from the map's pointer handling) ---- */
-
-/** Extend a user-drawn split line beyond the selected room boundary. */
-function extendSplitLine(line: [Pt, Pt], room: number): [Pt, Pt] | null {
-  const mask = S.mask;
-  const scale = S.map?.scale;
-  if (!mask || !scale || !room) return null;
-  const [[x0,y0],[x1,y1]] = line;
-  const dx=x1-x0, dy=y1-y0, length=Math.hypot(dx,dy);
-  if (length < 4*scale) return null;
-  const ux=dx/length, uy=dy/length;
-  let tMin=Infinity, tMax=-Infinity;
-  const {w,h,data}=mask;
-  for(let y=0;y<h;y++) for(let x=0;x<w;x++) {
-    const i=(y*w+x)*4;
-    if(!data[i+3] || data[i]!==room) continue;
-    const px=(x+0.5)*scale, py=(y+0.5)*scale;
-    const t=(px-x0)*ux+(py-y0)*uy;
-    const distance=Math.abs((px-x0)*uy-(py-y0)*ux);
-    if(distance>2*scale) continue;
-    tMin=Math.min(tMin,t);
-    tMax=Math.max(tMax,t);
-  }
-  if(!Number.isFinite(tMin) || tMax-tMin<4*scale) return null;
-  const margin=12*scale;
-  return [[x0+ux*(tMin-margin),y0+uy*(tMin-margin)],[x0+ux*(tMax+margin),y0+uy*(tMax+margin)]];
-}
 
 /** Start an edit gesture, or return null to let the map pan. */
 export function editPointerDown(e: PointerEvent): EditGesture | null {
@@ -437,16 +369,16 @@ export function editPointerUp(e: PointerEvent, g: EditGesture): void {
   if (g.type === "edit-line") {
     const p = toBase(e);
     if (Math.hypot(e.clientX - g.x0, e.clientY - g.y0) < 6) {
+      // A tap picks the room to split.
+      ed.line = null;
       const id = roomAt(p);
       ed.rooms = id ? [id] : [];
-      ed.line = null;
-      if (id) toast("Drag from the doorway across the room to set the split direction.");
     } else {
-      const id = ed.rooms[0] || roomAt(g.a);
-      ed.rooms = id ? [id] : [];
-      const drawn: [Pt, Pt] = [g.a, [p.x, p.y]];
-      ed.line = id ? extendSplitLine(drawn, id) : null;
-      if (id && !ed.line) toast("Drag farther through the room to set the split direction.");
+      ed.line = [g.a, [p.x, p.y]];
+      if (!ed.rooms.length) {
+        const id = roomAt({ x: (g.a[0] + p.x) / 2, y: (g.a[1] + p.y) / 2 });
+        if (id) ed.rooms = [id];
+      }
     }
     refreshMapOverlays();
     return;
@@ -493,12 +425,11 @@ export function renderEditFoot(): void {
          <div class="foot-actions"><button class="btn-soft" data-act="edit-clear">Clear</button><button class="btn-small-primary" data-act="room-merge">Merge rooms</button></div>`
         : `<span class="hint">Click two rooms next to each other to merge them into one.</span>`;
   } else if (ed.tool === "split") {
-    const hasPreview = ed.line && renderSplitPreview(ed.line, ed.rooms[0], m.scale);
     html =
       ed.line && ed.rooms.length
-        ? `<span class="hint">Split <b>${esc(roomName(ed.rooms[0]))}</b> along the line.${hasPreview ? " The colours show the estimated split." : ""}</span>
-         <div class="foot-actions"><button class="btn-soft" data-act="edit-clear">Clear line</button><button class="btn-small-primary" data-act="room-split">Split room</button></div>`
-        : `<span class="hint">Drag from the doorway across the room. The line extends past the room edges.</span>`;
+        ? `<span class="hint">Split <b>${esc(roomName(ed.rooms[0]))}</b> along the line.</span>
+         <div class="foot-actions"><button class="btn-soft" data-act="edit-clear">Redraw</button><button class="btn-small-primary" data-act="room-split">Split room</button></div>`
+        : `<span class="hint">Drag a line straight across the room you want to split, from wall to wall.</span>`;
   } else {
     const id = ed.rooms[0];
     if (!id) {
