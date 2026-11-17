@@ -1,7 +1,7 @@
 // Entry point: global button handling and start-up.
 
 import { $, $$, $opt, closest, icon } from "./dom";
-import { closeMapHistory, compareMapSnapshots, mapEmpty, previewMapSnapshot, refreshMapOverlays, showMapHistory } from "./map/core";
+import { clearMapHistory, closeMapHistory, compareMapSnapshots, mapEmpty, previewMapSnapshot, refreshMapOverlays, showMapHistory } from "./map/core";
 import { fitMap } from "./map/fit";
 import {
   clearEditPicks, deleteSelected, discardEdits, endEdit, mergeRooms, renameRoom, saveRestrictions,
@@ -89,6 +89,9 @@ document.addEventListener("click", async (e) => {
     case "dismiss-update":
       S.updateDismissed = true;
       $("#update-banner").hidden = true;
+      return;
+    case "clear-map-history":
+      if (confirm("Clear saved map versions for this robot from this browser?")) clearMapHistory();
       return;
     case "history-open":
       return showMapHistory();
