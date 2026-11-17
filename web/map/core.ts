@@ -70,6 +70,11 @@ function rememberMap(map: MapPayload): MapSnapshot[] {
   return next;
 }
 
+export function saveMapSnapshotBeforeEdit(): void {
+  if (!S.map || !S.map.base) return;
+  rememberMap(S.map);
+}
+
 function snapshotLabel(snapshot: MapSnapshot): string {
   return `${new Date(snapshot.created_at).toLocaleString()} · ${snapshot.rooms.length} rooms`;
 }
