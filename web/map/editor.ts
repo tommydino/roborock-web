@@ -308,6 +308,50 @@ export function clearEditPicks(): void {
 
 /* ---- gestures (called from the map's pointer handling) ---- */
 
+/** Find the shortest doorway-sized span between two mapped walls near a tap. */
+function doorwayLine(p: Point, room: number): [Pt, Pt] | null {
+  const m = S.map;
+  const mask = S.mask;
+  if (!m?.frame || !mask || !room) return null;
+  const { w, h, data } = mask;
+  const { scale } = m;
+  const x = p.x / scale;
+  const y = p.y / scale;
+  const mmPerPixel = m.frame.mm;
+  if (!(mmPerPixel > 0) || !(scale > 0)) return null;
+  const maxWidth = 1600 / mmPerPixel;
+
+  const wallAt = (dx: number, dy: number): Pt | null => {
+    for (let distance = 0; distance <= maxWidth; distance += 0.5) {
+      const col = Math.floor(x + dx * distance);
+      const row = Math.floor(y + dy * distance);
+      if (col < 0 || col >= w || row < 0 || row >= h) return null;
+      const i = (row * w + col) * 4;
+      if (!data[i + 3]) return null;
+      if (data[i] === room) continue;
+      const isWall = data[i] === 0 && (data[i + 1] === 1 || data[i + 1] === 2);
+      return isWall ? [(col + 0.5) * scale, (row + 0.5) * scale] : null;
+    }
+    return null;
+  };
+
+  let best: [Pt, Pt] | null = null;
+  let bestWidth = Infinity;
+  for (let direction = 0; direction < 16; direction++) {
+    const angle = direction * Math.PI / 16;
+    const dx = Math.cos(angle);
+    const dy = Math.sin(angle);
+    const a = wallAt(dx, dy);
+    const b = wallAt(-dx, -dy);
+    if (!a || !b) continue;
+    const width = Math.hypot(a[0] - b[0], a[1] - b[1]) * mmPerPixel / scale;
+    if (width < 450 || width > 1600 || width >= bestWidth) continue;
+    best = [a, b];
+    bestWidth = width;
+  }
+  return best;
+}
+
 /** Start an edit gesture, or return null to let the map pan. */
 export function editPointerDown(e: PointerEvent): EditGesture | null {
   const ed = S.edit;
@@ -411,10 +455,10 @@ export function editPointerUp(e: PointerEvent, g: EditGesture): void {
   if (g.type === "edit-line") {
     const p = toBase(e);
     if (Math.hypot(e.clientX - g.x0, e.clientY - g.y0) < 6) {
-      // A tap picks the room to split.
-      ed.line = null;
       const id = roomAt(p);
       ed.rooms = id ? [id] : [];
+      ed.line = doorwayLine(p, id);
+      if (id && !ed.line) toast("No doorway-sized gap found here. Tap the centre of the opening or drag a line.");
     } else {
       ed.line = [g.a, [p.x, p.y]];
       if (!ed.rooms.length) {
@@ -471,8 +515,8 @@ export function renderEditFoot(): void {
     html =
       ed.line && ed.rooms.length
         ? `<span class="hint">Split <b>${esc(roomName(ed.rooms[0]))}</b> along the line.${hasPreview ? " The colours show the estimated split." : ""}</span>
-         <div class="foot-actions"><button class="btn-soft" data-act="edit-clear">Redraw</button><button class="btn-small-primary" data-act="room-split">Split room</button></div>`
-        : `<span class="hint">Drag a line straight across the room you want to split, from wall to wall.</span>`;
+         <div class="foot-actions"><button class="btn-soft" data-act="edit-clear">Clear line</button><button class="btn-small-primary" data-act="room-split">Split room</button></div>`
+        : `<span class="hint">Tap the centre of a doorway to suggest a split, or drag a line from wall to wall.</span>`;
   } else {
     const id = ed.rooms[0];
     if (!id) {
