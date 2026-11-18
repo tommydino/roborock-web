@@ -87,8 +87,15 @@ function runDetailHtml(): string {
   const mode = run.mode?.replaceAll("_", " ") ?? null;
   const startType = run.start_type?.replaceAll("_", " ") ?? null;
   const finishReason = run.finish_reason?.replaceAll("_", " ") ?? null;
+  const recordedEvents = run.events ?? [];
+  const timeline = [
+    { at: run.begin, label: `Cleaning started${startType ? ` · ${startType}` : ""}` },
+    ...recordedEvents.map((event) => ({ at: event.at, label: event.label })),
+    { at: run.end, label: `${result}${finishReason ? ` · ${finishReason}` : ""}` },
+  ].sort((a, b) => a.at - b.at);
   const stats = [fmtDuration(duration), fmtArea(run.area), mode,
     run.wash_count != null ? `${run.wash_count} mop washes` : null,
+    run.dust_collected ? "Dust collected" : null,
     run.avoid_count != null ? `${run.avoid_count} avoidance events` : null]
     .filter((x): x is string => !!x).map((x) => `<span>${esc(x)}</span>`).join("");
   return `<section class="run-detail">
@@ -107,12 +114,12 @@ function runDetailHtml(): string {
       <p class="run-disclaimer">Playback follows the saved route. The robot did not provide timestamps for each point, so intermediate times are approximate.</p>`
       : `<div class="run-no-route">No route map was saved for this run. New runs are saved with their route while this app is running.</div>`}
     <div class="run-timeline"><b>Run timeline</b><ol>
-      <li><time>${clock(run.begin)}</time><span>Cleaning started${startType ? ` · ${esc(startType)}` : ""}</span></li>
-      ${run.wash_count != null ? `<li><time>During</time><span>Mop washed ${run.wash_count} times</span></li>` : ""}
-      ${run.avoid_count != null ? `<li><time>During</time><span>${run.avoid_count} obstacle avoidance events</span></li>` : ""}
-      <li><time>${clock(run.end)}</time><span>${esc(result)}${finishReason ? ` · ${esc(finishReason)}` : ""}</span></li>
+      ${timeline.map((event) => `<li><time>${clock(event.at)}</time><span>${esc(event.label)}</span></li>`).join("")}
+      ${run.wash_count != null && !recordedEvents.some((event) => event.label === "Washing mop") ? `<li class="run-timeline-note"><time>—</time><span>Mop washed ${run.wash_count} times · individual times unavailable</span></li>` : ""}
     </ol></div>
-    <p class="run-disclaimer">This is the event detail available from the robot's saved record. It doesn't include exact timestamps for room changes or individual mop washes.</p>
+    <p class="run-disclaimer">${recordedEvents.length
+      ? "Dock and resume events were observed while this app was open. Their times are accurate to within the status polling interval."
+      : "This run has summary history only. Detailed dock and resume events are recorded for runs observed while this app is open."}</p>
   </section>`;
 }
 

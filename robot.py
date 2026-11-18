@@ -219,6 +219,10 @@ class DeviceController:
         self.history = history or History(None)
         self._fresh: tuple[tuple, dict[str, Any]] | None = None
         self._run_seen = False  # a run was going on at the last history check
+        self._run_events: list[dict[str, Any]] = []
+        self._pending_run_events: list[dict[str, Any]] = []
+        self._pending_run_end: int | None = None
+        self._run_last_state: str | None = None
         self._history_at = 0.0
         self._to_backfill: list[int] = []  # older runs from the robot's list, still to fetch
         self._p = device.v1_properties
@@ -517,10 +521,20 @@ class DeviceController:
         st = await self.status()
         if st.get("state") is None:
             return 120  # can't reach it
-        if st.get("job") or st.get("phase") in ("cleaning", "returning", "paused"):
+        active = st.get("job") or st.get("phase") in ("cleaning", "returning", "paused")
+        # Dock states such as washing the mop are part of a run only after we've
+        # already seen that run start. This avoids recording routine dock work.
+        active = active or (self._run_seen and st.get("phase") == "dock")
+        if active:
+            self._record_run_event(st)
             self._run_seen = True
-            return 30
+            return 5
         if self._run_seen or time.monotonic() - self._history_at >= 900:
+            if self._run_seen and self._run_events:
+                self._pending_run_events = self._run_events
+                self._pending_run_end = int(time.time())
+            self._run_events = []
+            self._run_last_state = None
             self._run_seen = False
             self._history_at = time.monotonic()
             summary = self._p.clean_summary
@@ -532,14 +546,72 @@ class DeviceController:
                     await self._refresh_map()
                 grid = grid_from_map(self._map) if self._map else None
                 run_map = self._map
-                run = _run(ids[0], summary.last_clean_record, grid, "live", self._p.status.current_map, self._mode(), run_map)
+                events = self._pending_run_events if self._pending_matches(summary.last_clean_record.end) else None
+                run = _run(
+                    ids[0], summary.last_clean_record, grid, "live", self._p.status.current_map,
+                    self._mode(), run_map, events,
+                )
                 self.history.add(run, map_asset(run_map, self._room_names) if run_map and run.route else None)
+                if events:
+                    self._pending_run_events = []
+                    self._pending_run_end = None
+            elif ids and self._pending_run_events and self._pending_matches(
+                next((r.end for r in self.history.runs if r.id == str(ids[0])), None)
+            ):
+                # A run may have been backfilled before this live observation
+                # finished; enrich that record rather than dropping the events.
+                previous = next((r for r in self.history.runs if r.id == str(ids[0])), None)
+                if previous:
+                    self.history.add(dataclasses.replace(previous, events=self._pending_run_events))
+                    self._pending_run_events = []
+                    self._pending_run_end = None
             self._to_backfill = [rid for rid in ids[1:] if not self.history.has(str(rid))]
         # Fill in older runs from the robot's own list, one per look.
         if self._to_backfill:
             await self._backfill(self._to_backfill.pop(0))
             return 15
-        return 120
+        # Notice a newly started run soon enough to capture its later dock events.
+        return 30
+
+    def _pending_matches(self, record_end: int | None) -> bool:
+        """Don't attach live events to an older record if Roborock hasn't synced yet."""
+        return bool(
+            record_end is not None and self._pending_run_end is not None
+            and abs(record_end - self._pending_run_end) <= 600
+        )
+
+    def _record_run_event(self, status: dict[str, Any]) -> None:
+        """Keep timestamped dock/resume transitions for runs seen while this app is open."""
+        state = status.get("state")
+        if not isinstance(state, str):
+            return
+        if not self._run_seen:
+            self._run_events = []
+            self._run_last_state = None
+
+        labels = {
+            "going_to_wash_the_mop": "Returning to dock to wash mop",
+            "back_to_dock_washing_duster": "Returning to dock to wash mop",
+            "emptying_the_bin": "Emptying dustbin",
+            "washing_the_mop": "Washing mop",
+            "washing_the_mop_2": "Washing mop",
+            "detaching_the_mop": "Detaching mop mounts",
+            "attaching_the_mop": "Installing mop mounts",
+            "paused": "Cleaning paused",
+        }
+        previous = self._run_last_state
+        label = labels.get(state)
+        if label and state != previous:
+            # The two firmware states for mop washing can alternate; don't show
+            # duplicate entries for one continuous wash.
+            if not self._run_events or self._run_events[-1]["label"] != label:
+                self._run_events.append({"at": int(time.time()), "label": label})
+        elif status.get("phase") == "cleaning" and previous in {
+            "going_to_wash_the_mop", "back_to_dock_washing_duster", "emptying_the_bin",
+            "washing_the_mop", "washing_the_mop_2", "detaching_the_mop", "attaching_the_mop", "paused",
+        }:
+            self._run_events.append({"at": int(time.time()), "label": "Resuming cleaning"})
+        self._run_last_state = state
 
     async def _backfill(self, rid: int) -> None:
         previous = next((item for item in self.history.runs if item.id == str(rid)), None)
@@ -967,6 +1039,7 @@ def _version(raw: bytes) -> str:
 def _run(
     rid: int, record: CleanRecord, grid: Grid | None, source: str, flag: int | None,
     mode: str | None = None, rendered: RenderedMap | None = None,
+    events: list[dict[str, Any]] | None = None,
 ) -> Run:
     """A history entry from one of the robot's clean records (their ids are start times)."""
     begin = int(record.begin or rid)
@@ -986,6 +1059,8 @@ def _run(
         finish_reason=_name(getattr(record, "finish_reason", None)),
         avoid_count=getattr(record, "avoid_count", None),
         wash_count=getattr(record, "wash_count", None),
+        dust_collected=(bool(record.dust_collection_status) if record.dust_collection_status is not None else None),
+        events=events,
     )
 
 

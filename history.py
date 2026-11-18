@@ -64,6 +64,8 @@ class Run:
     finish_reason: str | None = None
     avoid_count: int | None = None
     wash_count: int | None = None
+    dust_collected: bool | None = None
+    events: list[dict[str, Any]] | None = None  # live status transitions observed by this app
 
 
 def _pack(img: Image.Image) -> str:
@@ -196,6 +198,8 @@ class History:
             "area": run.area, "complete": run.complete, "mode": run.mode, "source": run.source,
             "start_type": run.start_type, "finish_reason": run.finish_reason,
             "avoid_count": run.avoid_count, "wash_count": run.wash_count,
+            "dust_collected": run.dust_collected,
+            "events": run.events or [],
             "route": route, "map": asset,
         }
 
