@@ -51,7 +51,7 @@ from roborock.web_api import RoborockApiClient
 
 import roborock.mqtt.roborock_session as _mqtt_session
 
-from history import Grid, History, Run, estimate_model, freshness, grid_from_map
+from history import Grid, History, Run, estimate_model, freshness, grid_from_map, map_asset, route_from_map
 from maprender import MapRenderer, RenderedMap
 
 _LOGGER = logging.getLogger(__name__)
@@ -532,7 +532,9 @@ class DeviceController:
                 async with self._map_lock:
                     await self._refresh_map()
                 grid = grid_from_map(self._map) if self._map else None
-                self.history.add(_run(ids[0], summary.last_clean_record, grid, "live", self._p.status.current_map, self._mode()))
+                run_map = self._map
+                run = _run(ids[0], summary.last_clean_record, grid, "live", self._p.status.current_map, self._mode(), run_map)
+                self.history.add(run, map_asset(run_map) if run_map and run.route else None)
             self._to_backfill = [rid for rid in ids[1:] if not self.history.has(str(rid))]
         # Fill in older runs from the robot's own list, one per look.
         if self._to_backfill:
@@ -543,6 +545,7 @@ class DeviceController:
     async def _backfill(self, rid: int) -> None:
         record = await self._p.clean_summary.get_clean_record(rid)
         grid = None
+        rendered = None
         if self._record_maps is not False:
             # Not every robot hands out maps of past runs; ask once and remember.
             try:
@@ -554,7 +557,8 @@ class DeviceController:
             except Exception as err:  # noqa: BLE001
                 _LOGGER.info("No map for past runs from this robot: %s", err or type(err).__name__)
             self._record_maps = grid is not None
-        self.history.add(_run(rid, record, grid, "robot", None))
+        run = _run(rid, record, grid, "robot", None, rendered=rendered)
+        self.history.add(run, map_asset(rendered) if rendered and run.route else None)
 
     def _mode(self) -> str | None:
         try:
@@ -577,6 +581,9 @@ class DeviceController:
         if self._fresh is None or self._fresh[0] != key:
             self._fresh = (key, await asyncio.to_thread(freshness, self.history, self._map, flag))
         return self._fresh[1]
+
+    async def run_detail(self, run_id: str) -> dict[str, Any] | None:
+        return self.history.detail(run_id)
 
     async def _refresh_map(self) -> None:
         p = self._p
@@ -930,7 +937,10 @@ def _version(raw: bytes) -> str:
     return hashlib.sha1(raw).hexdigest()[:12]
 
 
-def _run(rid: int, record: CleanRecord, grid: Grid | None, source: str, flag: int | None, mode: str | None = None) -> Run:
+def _run(
+    rid: int, record: CleanRecord, grid: Grid | None, source: str, flag: int | None,
+    mode: str | None = None, rendered: RenderedMap | None = None,
+) -> Run:
     """A history entry from one of the robot's clean records (their ids are start times)."""
     begin = int(record.begin or rid)
     return Run(
@@ -944,6 +954,11 @@ def _run(rid: int, record: CleanRecord, grid: Grid | None, source: str, flag: in
         source=source,
         mode=mode,
         grid=grid,
+        route=route_from_map(rendered) if rendered else None,
+        start_type=_name(getattr(record, "start_type", None)),
+        finish_reason=_name(getattr(record, "finish_reason", None)),
+        avoid_count=getattr(record, "avoid_count", None),
+        wash_count=getattr(record, "wash_count", None),
     )
 
 

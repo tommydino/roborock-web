@@ -30,7 +30,7 @@ ROOM_DONE = 0.5  # a run that covered half a room's floor counts as cleaning the
 KEEP_DAYS = 120
 DEFAULT_INTERVAL = 7  # days a room can go before it's due
 INTERVALS = [1, 2, 3, 7, 14]  # what the app offers
-RECENT_RUNS = 12  # how many runs the app lists
+RECENT_RUNS = 30  # how many runs the app lists
 
 Line = list[tuple[float, float]]
 
@@ -59,6 +59,11 @@ class Run:
     source: str = "live"  # live: seen finishing by this app; robot: from the robot's own list; demo
     mode: str | None = None  # cleaning mode (vacuum, vac_and_mop…), when known
     grid: Grid | None = None  # None when the path isn't known
+    route: dict[str, Any] | None = None  # ordered path lines and the map image version
+    start_type: str | None = None
+    finish_reason: str | None = None
+    avoid_count: int | None = None
+    wash_count: int | None = None
 
 
 def _pack(img: Image.Image) -> str:
@@ -102,12 +107,31 @@ def grid_from_map(m: RenderedMap) -> Grid | None:
     )
 
 
+def route_from_map(m: RenderedMap) -> dict[str, Any] | None:
+    """Keep ordered route points for a run; coverage grids alone lose their order."""
+    path = m.things.get("path") or []
+    mop_path = m.things.get("mop_path") or []
+    if not path:
+        return None
+    return {"map": m.image_version or m.version, "path": path, "mop_path": mop_path}
+
+
+def map_asset(m: RenderedMap) -> dict[str, Any]:
+    """The floor image belonging to a route, stored once per image version."""
+    return {
+        "base": "data:image/png;base64," + base64.b64encode(m.base_png).decode(),
+        "width": m.width,
+        "height": m.height,
+    }
+
+
 class History:
     """The runs and per-room settings of one robot, kept in a small JSON file."""
 
     def __init__(self, path: Path | None) -> None:
         self._path = path
         self.runs: list[Run] = []
+        self.maps: dict[str, dict[str, Any]] = {}
         self.intervals: dict[str, int] = {}
         self.created = int(time.time())  # when this app started keeping track
         self.rev = 0
@@ -115,6 +139,7 @@ class History:
             try:
                 raw = json.loads(path.read_text())
                 self.created = int(raw.get("created") or self.created)
+                self.maps = raw.get("maps") or {}
                 self.intervals = {str(k): int(v) for k, v in (raw.get("intervals") or {}).items()}
                 for r in raw.get("runs") or []:
                     grid = r.pop("grid", None)
@@ -131,13 +156,31 @@ class History:
     def has(self, run_id: str) -> bool:
         return any(r.id == run_id for r in self.runs)
 
-    def add(self, run: Run) -> None:
+    def add(self, run: Run, map_asset: dict[str, Any] | None = None) -> None:
         cutoff = time.time() - KEEP_DAYS * 86400
         runs = [r for r in self.runs if r.id != run.id and r.end >= cutoff]
         if run.end >= cutoff:
             runs.append(run)
         self.runs = sorted(runs, key=lambda r: r.begin)
+        if run.route and map_asset:
+            self.maps[str(run.route.get("map"))] = map_asset
+        refs = {str(r.route.get("map")) for r in self.runs if r.route and r.route.get("map")}
+        self.maps = {key: value for key, value in self.maps.items() if key in refs}
         self._changed()
+
+    def detail(self, run_id: str) -> dict[str, Any] | None:
+        run = next((r for r in self.runs if r.id == run_id), None)
+        if run is None:
+            return None
+        route = run.route
+        asset = self.maps.get(str(route.get("map"))) if route else None
+        return {
+            "id": run.id, "begin": run.begin, "end": run.end, "duration": run.duration,
+            "area": run.area, "complete": run.complete, "mode": run.mode, "source": run.source,
+            "start_type": run.start_type, "finish_reason": run.finish_reason,
+            "avoid_count": run.avoid_count, "wash_count": run.wash_count,
+            "route": route, "map": asset,
+        }
 
     def interval(self, flag: int | None, room: int) -> int:
         return self.intervals.get(f"{flag}:{room}", DEFAULT_INTERVAL)
@@ -152,7 +195,7 @@ class History:
         self.rev += 1
         if not self._path:
             return
-        data = {"created": self.created, "intervals": self.intervals, "runs": [asdict(r) for r in self.runs]}
+        data = {"created": self.created, "intervals": self.intervals, "runs": [asdict(r) for r in self.runs], "maps": self.maps}
         self._path.parent.mkdir(parents=True, exist_ok=True)
         tmp = self._path.with_suffix(".tmp")
         tmp.write_text(json.dumps(data, separators=(",", ":")))
@@ -264,7 +307,7 @@ def freshness(history: History, m: RenderedMap, flag: int | None, now: float | N
     for r in reversed(on_map[-RECENT_RUNS:]):
         c, mp = covers.get(r.id, (None, None))
         runs.append({
-            "begin": r.begin, "end": r.end, "duration": r.duration, "area": r.area, "complete": r.complete,
+            "id": r.id, "begin": r.begin, "end": r.end, "duration": r.duration, "area": r.area, "complete": r.complete,
             "source": r.source, "mapped": c is not None, "mopped": mp is not None,
             "rooms": [rid for rid in room_masks if c is not None and share(rid, c) >= ROOM_DONE],
         })

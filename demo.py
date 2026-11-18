@@ -13,7 +13,7 @@ import time
 from collections import deque
 from typing import Any
 
-from history import History, Run, estimate_model, freshness, grid_from_lines
+from history import History, Run, estimate_model, freshness, grid_from_lines, map_asset, route_from_map
 from maprender import MapRenderer, RenderedMap
 from robot import RoomNames, build_restriction_payload
 
@@ -302,6 +302,7 @@ INTERVALS = {17: 2, 16: 3, 20: 3, 21: 3, 18: 7, 19: 7}  # days between cleans, p
 def _history() -> tuple[History, list[tuple[float, float]]]:
     """Made-up history for the demo, plus the path of its last run (which the map shows)."""
     history = History(None)
+    renderer = MapRenderer()
     now = time.time()
     last: list[tuple[float, float]] = []
     for hours, rooms, mopped in reversed(HISTORY):
@@ -312,11 +313,14 @@ def _history() -> tuple[History, list[tuple[float, float]]]:
         # Mopping is slower, and the mop gets washed on the way: about 80 s per m² against 50.
         duration = int(150 + area * 80) if mopped else int(90 + area * 50)
         end = int(now - hours * 3600)
-        history.add(Run(
+        rendered = renderer.render(build_map(DOCKED_POS, 90.0, last, end, mopping=mopped))
+        run = Run(
             id=f"demo-{end}", begin=end - duration, end=end, duration=duration, area=area, complete=True,
             map_flag=0, source="demo", mode="vac_and_mop" if mopped else "vacuum",
             grid=grid_from_lines(lines, lines if mopped else [], LEFT, TOP + H - 1, W, H),
-        ))
+            route=route_from_map(rendered) if rendered else None,
+        )
+        history.add(run, map_asset(rendered) if rendered and run.route else None)
     history.created = history.runs[0].begin
     for rid, days in INTERVALS.items():
         history.set_interval(0, rid, days)
@@ -454,11 +458,14 @@ class DemoController:
         """Keep the run that just finished, like the real app does."""
         end = int(time.time())
         lines = _grid_lines(self.path)
-        self.history.add(Run(
+        rendered = self._rendered()
+        run = Run(
             id=f"demo-{end}", begin=int(self._run_begin), end=end, duration=int(self.clean_time),
             area=round(self.clean_area, 1), complete=True, map_flag=0, source="demo", mode=self._mode_name(),
             grid=grid_from_lines(lines, lines if self.water != 200 else [], LEFT, TOP + H - 1, W, H),
-        ))
+            route=route_from_map(rendered),
+        )
+        self.history.add(run, map_asset(rendered))
 
     def _set_passes(self, value: Any) -> None:
         if int(value) not in (1, 2):
@@ -604,6 +611,10 @@ class DemoController:
         if self._fresh is None or self._fresh[0] != key:
             self._fresh = (key, await asyncio.to_thread(freshness, self.history, m, 0))
         return self._fresh[1]
+
+    async def run_detail(self, run_id: str) -> dict[str, Any] | None:
+        self._tick()
+        return self.history.detail(run_id)
 
     async def settings(self) -> dict[str, Any]:
         await asyncio.sleep(0.25)

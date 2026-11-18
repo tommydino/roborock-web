@@ -203,6 +203,7 @@ export interface RoomFreshness {
 }
 
 export interface RunSummary {
+  id: string;
   begin: number;
   end: number;
   duration: number | null;
@@ -212,6 +213,23 @@ export interface RunSummary {
   mapped: boolean; // the path is known, so it counts towards freshness
   mopped: boolean;
   rooms: number[]; // rooms it covered at least half of
+}
+
+export interface RunDetail {
+  id: string;
+  begin: number;
+  end: number;
+  duration: number | null;
+  area: number | null;
+  complete: boolean | null;
+  mode: string | null;
+  source: "live" | "robot" | "demo";
+  start_type: string | null;
+  finish_reason: string | null;
+  avoid_count: number | null;
+  wash_count: number | null;
+  route: { map: string; path: Polyline[]; mop_path: Polyline[] } | null;
+  map: { base: string; width: number; height: number } | null;
 }
 
 export interface Freshness {

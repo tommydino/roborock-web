@@ -138,6 +138,13 @@ def create_app(demo: bool) -> FastAPI:
     async def freshness(duid: str):
         return await (await ctrl(duid)).freshness()
 
+    @app.get("/api/devices/{duid}/runs/{run_id}")
+    async def run_detail(duid: str, run_id: str):
+        detail = await (await ctrl(duid)).run_detail(run_id)
+        if detail is None:
+            raise HTTPException(404, "Cleaning run not found")
+        return detail
+
     @app.post("/api/devices/{duid}/action")
     async def action(duid: str, body: dict[str, Any] = Body(...)):
         name = body.pop("action", None)
