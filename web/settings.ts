@@ -49,8 +49,19 @@ function routeSvg(run: RunDetail): string {
       <img src="${run.map.base}" alt="Map for this cleaning run">
       <svg viewBox="0 0 ${run.map.width} ${run.map.height}" aria-label="Cleaning route">
         ${rooms}${charger}${lines(run.route.path, "clean", "clean")}${lines(run.route.mop_path, "mop", "mop")}
-        <g id="run-playhead" class="run-playhead" visibility="hidden"><circle r="7"/><circle class="run-playhead-dot" r="2.3"/></g>
+        <g id="run-playhead" class="run-playhead" visibility="hidden" aria-label="Robot">
+          <circle class="robot-shadow" r="11"/>
+          <circle class="robot-shell" r="9"/>
+          <circle class="robot-top" r="6.6"/>
+          <path class="robot-bumper" d="M -5.8 -5.4 A 8 8 0 0 1 5.8 -5.4"/>
+          <circle class="robot-sensor" cy="-2.2" r="1.5"/>
+          <circle class="robot-sensor-glint" cy="-2.2" r=".55"/>
+        </g>
       </svg>
+    </div>
+    <div class="run-route-legend" aria-label="Route legend">
+      <span><i class="run-route-swatch vacuum"></i>Vacuuming</span>
+      <span><i class="run-route-swatch mop"></i>Mopping</span>
     </div>
     <div class="run-map-tools" role="group" aria-label="Map zoom controls">
       <button class="btn-soft" data-map-zoom-in aria-label="Zoom in" title="Zoom in">+</button>
@@ -110,6 +121,7 @@ function runDetailHtml(): string {
         <label class="visually-hidden" for="run-progress">Route progress</label>
         <input id="run-progress" type="range" min="0" max="1000" value="${routeProgress}">
         <span id="run-progress-label">${fmtDuration(0)} / ${fmtDuration(duration)}</span>
+        <b id="run-replay-phase" class="run-replay-phase">Vacuuming</b>
       </div>
       <p class="run-disclaimer">The saved vacuum route plays first, followed by the separate mop route. Roborock doesn't provide timestamps for individual path points, so replay timing is approximate.</p>`
       : `<div class="run-no-route">No route map was saved for this run. New runs are saved with their route while this app is running.</div>`}
@@ -154,9 +166,14 @@ function syncRouteProgress(): void {
       const target = Math.min(route.length, progress * route.length);
       const seg = route.segments.find((s) => target <= s.from + s.length) ?? route.segments[route.segments.length - 1];
       const local = Math.max(0, Math.min(1, (target - seg.from) / seg.length));
-      playhead.setAttribute("transform", `translate(${seg.a[0] + (seg.b[0] - seg.a[0]) * local} ${seg.a[1] + (seg.b[1] - seg.a[1]) * local})`);
+      const x = seg.a[0] + (seg.b[0] - seg.a[0]) * local;
+      const y = seg.a[1] + (seg.b[1] - seg.a[1]) * local;
+      const angle = Math.atan2(seg.b[1] - seg.a[1], seg.b[0] - seg.a[0]) * 180 / Math.PI + 90;
+      playhead.setAttribute("transform", `translate(${x} ${y}) rotate(${angle})`);
       playhead.setAttribute("visibility", progress > 0 ? "visible" : "hidden");
     }
+    const phase = card.querySelector<HTMLElement>("#run-replay-phase");
+    if (phase) phase.textContent = mop.length > 0 && progress * totalLength >= clean.length ? "Mopping" : "Vacuuming";
   }
   const label = card.querySelector<HTMLElement>("#run-progress-label");
   if (selectedRun && label) {
