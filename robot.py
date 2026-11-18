@@ -704,22 +704,27 @@ class DeviceController:
             raise ValueError("Cleaning run not found")
         record_id = int(run_id)
         record = None
-        map_data_v2 = None
+        map_data_v2_rpc = None
         command_errors = []
-        for label, channel, command in (
-            ("get_clean_record", self._p.clean_summary.rpc_channel, RoborockCommand.GET_CLEAN_RECORD),
-            # Newer Roborock models advertise clean-history detail support and
-            # may serve historical maps through the v2 map endpoint instead.
-            ("get_clean_record_map_v2", self._p.map_content.rpc_channel, "get_clean_record_map_v2"),
-        ):
-            try:
-                result = await _send_history_command(channel, command, [record_id])
-                if label == "get_clean_record":
-                    record = result
-                else:
-                    map_data_v2 = result
-            except Exception as err:  # keep the other raw reply if one command times out
-                command_errors.append({"command": label, "error": str(err) or type(err).__name__})
+        try:
+            record = await _send_history_command(
+                self._p.clean_summary.rpc_channel, RoborockCommand.GET_CLEAN_RECORD, [record_id]
+            )
+        except Exception as err:  # keep other raw replies if one command times out
+            command_errors.append({"command": "get_clean_record", "error": str(err) or type(err).__name__})
+
+        # The map channel (protocol 301) timed out on this model. Test the
+        # same v2 command over its ordinary RPC channel too; its shorter limit
+        # prevents a diagnostic download from hanging for another 45 seconds.
+        try:
+            map_data_v2_rpc = await _send_history_command(
+                self._p.clean_summary.rpc_channel,
+                "get_clean_record_map_v2",
+                [record_id],
+                timeout=12,
+            )
+        except Exception as err:
+            command_errors.append({"command": "get_clean_record_map_v2_rpc", "error": str(err) or type(err).__name__})
         features = self._p.device_features
         return {
             "format": "roborock-history-diagnostics-v1",
@@ -731,7 +736,7 @@ class DeviceController:
             },
             "stored_run": self.history.detail(run_id),
             "raw_clean_record": record,
-            "record_map_v2": _map_diagnostics(map_data_v2),
+            "record_map_v2_rpc": _map_diagnostics(map_data_v2_rpc),
             "command_errors": command_errors,
             "note": (
                 "Raw map data is a private floorplan. Block IDs and timestamps are included "
@@ -1213,7 +1218,9 @@ def _launching_app() -> str:
     return names.get(os.environ.get("TERM_PROGRAM", ""), "the app you started it from")
 
 
-async def _send_history_command(channel: Any, method: RoborockCommand | str, params: list[Any]) -> Any:
+async def _send_history_command(
+    channel: Any, method: RoborockCommand | str, params: list[Any], timeout: float = HISTORY_COMMAND_TIMEOUT
+) -> Any:
     """Give large historical records more time than python-roborock's RPC default."""
     # python-roborock currently hardcodes a 10-second timeout inside its RPC
     # channel. An outer wait_for alone cannot extend that inner deadline, so
@@ -1223,10 +1230,10 @@ async def _send_history_command(channel: Any, method: RoborockCommand | str, par
     async with _HISTORY_RPC_LOCK:
         try:
             if original_timeout is not None:
-                module._TIMEOUT = HISTORY_COMMAND_TIMEOUT
+                module._TIMEOUT = timeout
             return await asyncio.wait_for(
                 channel.send_command(method, params=params),
-                timeout=HISTORY_COMMAND_TIMEOUT + 5,
+                timeout=timeout + 5,
             )
         finally:
             if original_timeout is not None:
