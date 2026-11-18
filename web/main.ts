@@ -96,7 +96,7 @@ document.addEventListener("click", async (e) => {
     case "history-open":
       return showMapHistory();
     case "history-compare":
-      return compareMapSnapshots($("#history-before").value, $("#history-after").value);
+      return compareMapSnapshots($<HTMLSelectElement>("#history-before").value, $<HTMLSelectElement>("#history-after").value);
     case "history-close":
     case "history-toggle":
       return closeMapHistory();

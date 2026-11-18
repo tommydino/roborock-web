@@ -80,7 +80,7 @@ function runDetailHtml(): string {
 function syncRouteProgress(): void {
   const card = document.querySelector<HTMLElement>("#history-runs");
   const range = card?.querySelector<HTMLInputElement>("#run-progress");
-  if (!range) return;
+  if (!card || !range) return;
   const progress = Number(range.value) / 1000;
   card.querySelectorAll<SVGPolylineElement>("[data-route-line]").forEach((line) => {
     line.style.strokeDasharray = `${Math.max(0.001, progress * 1000)} 1000`;
