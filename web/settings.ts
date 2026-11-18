@@ -118,7 +118,7 @@ function runDetailHtml(): string {
       ${run.wash_count != null && !recordedEvents.some((event) => event.label === "Washing mop") ? `<li class="run-timeline-note"><time>—</time><span>Mop washed ${run.wash_count} times · individual times unavailable</span></li>` : ""}
     </ol></div>
     <p class="run-disclaimer">${recordedEvents.length
-      ? "Dock and resume events were observed while this app was open. Their times are accurate to within the status polling interval."
+      ? "Events were observed while this app was open. Room changes are sampled from map updates, so their times are approximate."
       : "This run has summary history only. Detailed dock and resume events are recorded for runs observed while this app is open."}</p>
   </section>`;
 }
