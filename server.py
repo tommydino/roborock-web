@@ -149,6 +149,10 @@ def create_app(demo: bool) -> FastAPI:
             raise HTTPException(404, "Cleaning run not found")
         return detail
 
+    @app.delete("/api/devices/{duid}/runs/{run_id}", status_code=204)
+    async def delete_run(duid: str, run_id: str):
+        await (await ctrl(duid)).delete_run(run_id)
+
     @app.post("/api/devices/{duid}/action")
     async def action(duid: str, body: dict[str, Any] = Body(...)):
         name = body.pop("action", None)

@@ -601,6 +601,17 @@ class DeviceController:
     async def runs(self) -> list[dict[str, Any]]:
         return self.history.list()
 
+    async def delete_run(self, run_id: str) -> None:
+        if not run_id.isdigit() or not self.history.has(run_id):
+            raise ValueError("Cleaning run not found")
+        await self._p.command.send(RoborockCommand.DEL_CLEAN_RECORD, [int(run_id)])
+        await self._p.clean_summary.refresh()
+        remaining = {str(item) for item in (self._p.clean_summary.records or [])}
+        if run_id in remaining:
+            raise RoborockException("The robot did not confirm that this cleaning run was deleted")
+        self.history.remove(run_id)
+        self._to_backfill = [rid for rid in self._to_backfill if str(rid) != run_id]
+
     async def _refresh_map(self) -> None:
         p = self._p
         raw = await p.map_content.rpc_channel.send_command(RoborockCommand.GET_MAP_V1)

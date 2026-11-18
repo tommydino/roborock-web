@@ -188,9 +188,10 @@ function renderRunHistory(): void {
   list.innerHTML = runHistory.length
     ? `<div class="history-runs-label">Recent runs</div><ul class="history-runs-list">${runHistory.map((run) => {
       const mode = run.mode?.replaceAll("_", " ");
-      return `<li><button class="run-open" data-run="${esc(run.id)}"><span class="run-when">${esc(fmtWhen(run.begin))}</span>
+      return `<li class="history-run-item"><button class="run-open" data-run="${esc(run.id)}"><span class="run-when">${esc(fmtWhen(run.begin))}</span>
         <span class="run-what">${fmtDuration(run.duration)} · ${fmtArea(run.area)}${mode ? ` · ${esc(mode)}` : ""}${run.mopped ? " · mopped" : ""}</span>
-        <span class="run-route-note">${run.mapped ? "Route available · open replay" : run.source !== "demo" ? "Open to load route map" : "Summary only"}</span></button></li>`;
+        <span class="run-route-note">${run.mapped ? "Route available · open replay" : run.source !== "demo" ? "Open to load route map" : "Summary only"}</span></button>
+        <button class="run-delete" data-run-delete="${esc(run.id)}" aria-label="Delete cleaning run" title="Delete run">${icon("trash")}</button></li>`;
     }).join("")}</ul>`
     : `<p class="muted">${runHistoryLoading ? "Loading run history…" : "No recent runs available."}</p>`;
   detail.innerHTML = runDetailHtml();
@@ -236,6 +237,31 @@ settingsRoot.addEventListener("click", async (e) => {
     selectedRunId = null;
     selectedRun = null;
     renderRunHistory();
+    return;
+  }
+  const deleteButton = closest<HTMLButtonElement>(e.target, "[data-run-delete]");
+  if (deleteButton) {
+    const id = deleteButton.dataset.runDelete ?? "";
+    const run = runHistory.find((item) => item.id === id);
+    const target = run?.source === "demo" ? "the demo history" : "the robot and this app";
+    if (!run || !confirm(`Delete the cleaning run from ${fmtWhen(run.begin)} from ${target}? This cannot be undone.`)) return;
+    deleteButton.disabled = true;
+    try {
+      await api<void>(devicePath(`runs/${encodeURIComponent(id)}`), { method: "DELETE" });
+      if (routeTimer != null) window.clearInterval(routeTimer);
+      routeTimer = null;
+      if (selectedRunId === id) {
+        selectedRunId = null;
+        selectedRun = null;
+      }
+      runHistory = runHistory.filter((item) => item.id !== id);
+      renderRunHistory();
+      toast("Cleaning run deleted");
+      void loadSettings();
+    } catch (error) {
+      deleteButton.disabled = false;
+      toast(`Couldn't delete this run: ${errorMessage(error)}`, true);
+    }
     return;
   }
   const speed = closest<HTMLButtonElement>(e.target, "[data-run-speed]");

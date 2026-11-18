@@ -162,6 +162,17 @@ class History:
     def has(self, run_id: str) -> bool:
         return any(r.id == run_id for r in self.runs)
 
+    def remove(self, run_id: str) -> bool:
+        """Remove one run and any map asset no remaining run references."""
+        before = len(self.runs)
+        self.runs = [run for run in self.runs if run.id != run_id]
+        if len(self.runs) == before:
+            return False
+        refs = {str(run.route.get("map")) for run in self.runs if run.route and run.route.get("map")}
+        self.maps = {key: value for key, value in self.maps.items() if key in refs}
+        self._changed()
+        return True
+
     def add(self, run: Run, map_asset: dict[str, Any] | None = None) -> None:
         cutoff = time.time() - KEEP_DAYS * 86400
         runs = [r for r in self.runs if r.id != run.id and r.end >= cutoff]

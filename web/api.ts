@@ -3,7 +3,7 @@
 import { S } from "./state";
 
 interface ApiOptions {
-  method?: "GET" | "POST";
+  method?: "GET" | "POST" | "DELETE";
   body?: unknown;
 }
 

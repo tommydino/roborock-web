@@ -620,6 +620,10 @@ class DemoController:
         self._tick()
         return self.history.list()
 
+    async def delete_run(self, run_id: str) -> None:
+        if not self.history.remove(run_id):
+            raise ValueError("Cleaning run not found")
+
     async def settings(self) -> dict[str, Any]:
         await asyncio.sleep(0.25)
         limits = {
