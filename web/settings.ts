@@ -16,6 +16,8 @@ let runHistoryLoading = true;
 let routeProgress = 0;
 let routeTimer: number | null = null;
 let routeSpeed = 1;
+let showVacuumRoute = true;
+let showMopRoute = true;
 let mapZoom = 1;
 let mapPanX = 0;
 let mapPanY = 0;
@@ -50,18 +52,18 @@ function routeSvg(run: RunDetail): string {
       <svg viewBox="0 0 ${run.map.width} ${run.map.height}" aria-label="Cleaning route">
         ${rooms}${charger}${lines(run.route.path, "clean", "clean")}${lines(run.route.mop_path, "mop", "mop")}
         <g id="run-playhead" class="run-playhead" visibility="hidden" aria-label="Robot">
-          <circle class="robot-shadow" r="11"/>
-          <circle class="robot-shell" r="9"/>
-          <circle class="robot-top" r="6.6"/>
-          <path class="robot-bumper" d="M -5.8 -5.4 A 8 8 0 0 1 5.8 -5.4"/>
-          <circle class="robot-sensor" cy="-2.2" r="1.5"/>
-          <circle class="robot-sensor-glint" cy="-2.2" r=".55"/>
+          <circle class="robot-halo" r="23"/>
+          <path class="robot-silhouette" d="M 0 -17 C 10 -17 17 -10 17 0 C 17 10 10 17 0 17 C -10 17 -17 10 -17 0 C -17 -10 -10 -17 0 -17 Z"/>
+          <path class="robot-shell-line" d="M -12 -8 C -8 -14 8 -14 12 -8 M -14 5 C -9 13 9 13 14 5"/>
+          <path class="robot-lid" d="M -7 -4 Q 0 -9 7 -4 L 8 5 Q 0 10 -8 5 Z"/>
+          <circle class="robot-lidar" cy="-1" r="2.3"/>
+          <path class="robot-bumper" d="M -11 -10 A 15 15 0 0 1 11 -10"/>
         </g>
       </svg>
     </div>
     <div class="run-route-legend" aria-label="Route legend">
-      <span><i class="run-route-swatch vacuum"></i>Vacuuming</span>
-      <span><i class="run-route-swatch mop"></i>Mopping</span>
+      <button type="button" data-route-toggle="clean" aria-pressed="true"><i class="run-route-swatch vacuum"></i>Vacuum</button>
+      <button type="button" data-route-toggle="mop" aria-pressed="true"><i class="run-route-swatch mop"></i>Mop</button>
     </div>
     <div class="run-map-tools" role="group" aria-label="Map zoom controls">
       <button class="btn-soft" data-map-zoom-in aria-label="Zoom in" title="Zoom in">+</button>
@@ -153,10 +155,12 @@ function syncRouteProgress(): void {
     ]) {
       let lineOffset = 0;
       const lengths = group.lines.map((line) => routeMetrics([line]).length);
+      const visible = group.name === "clean" ? showVacuumRoute : showMopRoute;
       card.querySelectorAll<SVGPolylineElement>(`[data-route-group="${group.name}"]`).forEach((line, index) => {
         const lineLength = lengths[index] ?? 0;
         const shown = Math.max(0, Math.min(lineLength, progress * totalLength - group.offset - lineOffset));
         line.style.strokeDasharray = `${(shown / Math.max(lineLength, 1)) * 1000} 1000`;
+        line.style.visibility = visible ? "visible" : "hidden";
         lineOffset += lineLength;
       });
     }
@@ -173,7 +177,12 @@ function syncRouteProgress(): void {
       playhead.setAttribute("visibility", progress > 0 ? "visible" : "hidden");
     }
     const phase = card.querySelector<HTMLElement>("#run-replay-phase");
-    if (phase) phase.textContent = mop.length > 0 && progress * totalLength >= clean.length ? "Mopping" : "Vacuuming";
+    const mopping = mop.length > 0 && progress * totalLength >= clean.length;
+    if (phase) {
+      phase.textContent = mopping ? "Mopping" : "Vacuuming";
+      phase.classList.toggle("is-mopping", mopping);
+    }
+    playhead?.classList.toggle("is-mopping", mopping);
   }
   const label = card.querySelector<HTMLElement>("#run-progress-label");
   if (selectedRun && label) {
@@ -226,7 +235,16 @@ function renderRunHistory(): void {
   detail.innerHTML = runDetailHtml();
   syncRouteProgress();
   syncSpeedButtons();
+  syncRouteToggles();
   applyMapView();
+}
+
+function syncRouteToggles(): void {
+  settingsRoot.querySelectorAll<HTMLButtonElement>("[data-route-toggle]").forEach((button) => {
+    const visible = button.dataset.routeToggle === "clean" ? showVacuumRoute : showMopRoute;
+    button.setAttribute("aria-pressed", String(visible));
+    button.classList.toggle("is-off", !visible);
+  });
 }
 
 async function openHistoryRun(id: string): Promise<void> {
@@ -237,6 +255,8 @@ async function openHistoryRun(id: string): Promise<void> {
   runHistoryLoading = true;
   routeProgress = 0;
   routeSpeed = 1;
+  showVacuumRoute = true;
+  showMopRoute = true;
   mapZoom = 1;
   mapPanX = 0;
   mapPanY = 0;
@@ -299,6 +319,14 @@ settingsRoot.addEventListener("click", async (e) => {
     syncSpeedButtons();
     return;
   }
+  const routeToggle = closest<HTMLButtonElement>(e.target, "[data-route-toggle]");
+  if (routeToggle) {
+    if (routeToggle.dataset.routeToggle === "clean") showVacuumRoute = !showVacuumRoute;
+    if (routeToggle.dataset.routeToggle === "mop") showMopRoute = !showMopRoute;
+    syncRouteProgress();
+    syncRouteToggles();
+    return;
+  }
   if (closest(e.target, "[data-map-zoom-in]")) { zoomMap(1); return; }
   if (closest(e.target, "[data-map-zoom-out]")) { zoomMap(-1); return; }
   if (closest(e.target, "[data-map-zoom-reset]")) {
@@ -337,7 +365,7 @@ settingsRoot.addEventListener("click", async (e) => {
 });
 
 settingsRoot.addEventListener("pointerdown", (e) => {
-  if (mapZoom <= 1 || closest(e.target, ".run-map-tools")) return;
+  if (mapZoom <= 1 || closest(e.target, ".run-map-tools") || closest(e.target, ".run-route-legend")) return;
   const map = closest<HTMLElement>(e.target, ".run-map");
   if (!map) return;
   mapDrag = { id: e.pointerId, x: e.clientX, y: e.clientY, panX: mapPanX, panY: mapPanY };
