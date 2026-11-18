@@ -13,6 +13,7 @@ import copy
 import dataclasses
 import errno
 import hashlib
+import importlib
 import json
 import logging
 import os
@@ -77,7 +78,9 @@ CODES_THROTTLED = (
     "Wait a minute and try again. If a code arrived by email in the last few minutes, enter it below."
 )
 SETTING_TIMEOUT = 8.0
+HISTORY_COMMAND_TIMEOUT = 45.0
 WHOLE_HOME_PASSES = (1, 2)  # what the robot takes for cleaning everywhere; rooms and zones go up to 3
+_HISTORY_RPC_LOCK = asyncio.Lock()
 
 S = RoborockStateCode
 CLEANING_STATES = {
@@ -700,17 +703,15 @@ class DeviceController:
         if not run_id.isdigit() or not self.history.has(run_id):
             raise ValueError("Cleaning run not found")
         record_id = int(run_id)
-        record = await asyncio.wait_for(
-            self._p.clean_summary.rpc_channel.send_command(
-                RoborockCommand.GET_CLEAN_RECORD, params=[record_id]
-            ),
-            20,
+        record = await _send_history_command(
+            self._p.clean_summary.rpc_channel,
+            RoborockCommand.GET_CLEAN_RECORD,
+            [record_id],
         )
-        map_data = await asyncio.wait_for(
-            self._p.map_content.rpc_channel.send_command(
-                RoborockCommand.GET_CLEAN_RECORD_MAP, params=[record_id]
-            ),
-            20,
+        map_data = await _send_history_command(
+            self._p.map_content.rpc_channel,
+            RoborockCommand.GET_CLEAN_RECORD_MAP,
+            [record_id],
         )
         features = self._p.device_features
         return {
@@ -1202,6 +1203,26 @@ def _launching_app() -> str:
     """The app this was started from, as macOS lists it under Local Network."""
     names = {"iTerm.app": "iTerm", "Apple_Terminal": "Terminal", "vscode": "Visual Studio Code", "WarpTerminal": "Warp"}
     return names.get(os.environ.get("TERM_PROGRAM", ""), "the app you started it from")
+
+
+async def _send_history_command(channel: Any, method: RoborockCommand, params: list[Any]) -> Any:
+    """Give large historical records more time than python-roborock's RPC default."""
+    # python-roborock currently hardcodes a 10-second timeout inside its RPC
+    # channel. An outer wait_for alone cannot extend that inner deadline, so
+    # temporarily raise the channel module's limit for these read-only exports.
+    module = importlib.import_module(type(channel).__module__)
+    original_timeout = getattr(module, "_TIMEOUT", None)
+    async with _HISTORY_RPC_LOCK:
+        try:
+            if original_timeout is not None:
+                module._TIMEOUT = HISTORY_COMMAND_TIMEOUT
+            return await asyncio.wait_for(
+                channel.send_command(method, params=params),
+                timeout=HISTORY_COMMAND_TIMEOUT + 5,
+            )
+        finally:
+            if original_timeout is not None:
+                module._TIMEOUT = original_timeout
 
 
 def _map_diagnostics(raw: Any) -> dict[str, Any]:
