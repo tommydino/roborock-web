@@ -99,7 +99,7 @@ The phone app tells you what the robot is doing now. Freshness tells you what it
 - **The map** goes from pale (cleaned in the last day) to dark (over two weeks ago). Spots it never reached, in rooms it does clean, are darkest. That's usually under the bed, the sofa or a desk, or something left on the floor. Hover anywhere for the exact age, and when it was last mopped.
 - **The panel** next to the map lists every room with when it was cleaned and mopped. Set how often each room should be cleaned (every day to every two weeks). Rooms past that are marked **Due**, and **Clean due rooms** sends the robot to just those, with your current cleaning mode. Click a room to pick it for a clean.
 
-**Settings → History** lists recent runs with their duration, area and cleaning mode. Open a run for its map, route playback and timeline. Choose 1×, 3× or 5× playback speed; zoom with the map controls or mouse wheel, and drag the map while zoomed. Use the trash button beside a run to delete it from the robot and this app; the app asks the robot to delete the record and removes its local copy only after the robot confirms it. The app records each run the robot finishes **while the app is running**, including its ordered route. During a run it samples dock and resume states and the current room to add timestamped timeline events. Room transitions are sampled from map updates, so their times are approximate. The standard saved clean record contains a summary, not the detailed event timeline shown by the Roborock app; the library used here currently has no command for that model-specific timeline. Use **Download raw run data for timeline analysis** on a run to export the record, device feature flags and original history map for investigation. This export includes private floorplan data. Some robots or individual records may not provide a route map. Playback timing is approximate because Roborock doesn't provide timestamps for individual route points. A run counts as cleaning a room once it covered half of its floor. History stays on your computer in `data/history-<robot>.json` and keeps the last 120 days.
+**Settings → History** lists recent runs with their duration, area and cleaning mode. Open a run for its map, route playback and timeline. Choose 1×, 3× or 5× playback speed; zoom with the map controls or mouse wheel, and drag the map while zoomed. Use the trash button beside a run to delete it from the robot and this app; the app asks the robot to delete the record and removes its local copy only after the robot confirms it. The app records each run the robot finishes **while the app is running**, including its ordered route. During a run it samples dock and resume states and the current room to add timestamped timeline events. Room transitions are sampled from map updates, so their times are approximate. The standard saved clean record contains a summary, not the detailed event timeline shown by the Roborock app; the library used here currently has no command for that model-specific timeline. Use **Download raw run data for timeline analysis** on a run to export the record, device feature flags and original history map for investigation. This export includes private floorplan data. Some robots or individual records may not provide a route map. Playback timing is approximate because Roborock doesn't provide timestamps for individual route points. A run counts as cleaning a room once it covered half of its floor. History stays on your computer and keeps the last 120 days.
 
 ## Editing the map
 
@@ -117,7 +117,7 @@ Click a wall or zone to move it, drag its dots to resize it, or delete it (trash
 
 - **Merge** two neighbouring rooms into one.
 - **Split** a room by drawing a line across it, wall to wall.
-- **Rename** a room. This only changes the name in this app (saved in `data/room_names.json`). There's no documented way to rename rooms in Roborock's cloud, so the Roborock app keeps its own names. Rename there to change a name everywhere.
+- **Rename** a room. This only changes the name in this app (saved in the app's local data folder). There's no documented way to rename rooms in Roborock's cloud, so the Roborock app keeps its own names. Rename there to change a name everywhere.
 
 Merging and splitting change the map on your robot, and the app asks before doing either. You can undo one by doing the opposite (split what you merged, merge what you split).
 
@@ -125,9 +125,10 @@ If a map has no-carpet zones made in the Roborock app, the editor warns you: the
 
 ## Privacy and security
 
-- Your Roborock session token is stored in `data/session.json` (readable only by you). **Sign out** in Settings, or delete the `data/` folder, to remove it.
-- Cleaning history is kept in `data/history-<robot>.json`. It never leaves your computer.
-- The last map is kept in `data/map-<robot>.json`, so the app can show it straight away after a restart (and while the robot is offline).
+- App data is stored outside the downloaded app folder so replacing it with an updated copy keeps your sign-in and local history. On macOS it is in `~/Library/Application Support/Roborock Web/data`; Linux and Windows use their usual per-user data folders. The first launch copies existing `data/` from this app folder or a matching Roborock Web folder in Downloads. The session file is readable only by your account. **Sign out** in Settings to remove the saved session.
+- Cleaning history and room names stay on your computer in this local data folder.
+- The last map is kept there too, so the app can show it straight away after a restart (and while the robot is offline).
+- Set `ROBOROCK_WEB_DATA_DIR` to choose a different persistent data folder.
 - The app only talks to Roborock's servers and to your robot.
 - By default it only listens on `localhost`. With `--host 0.0.0.0`, **anyone on your network can control the robot**. There's no password, so only do this on a network you trust.
 
@@ -142,7 +143,7 @@ If a map has no-carpet zones made in the Roborock app, the editor warns you: the
 - If the robot or Roborock isn't responding, use **Reconnect**. It retries with your saved sign-in. Signing out means you'll need a new code to get back in.
 - The app talks to the robot directly on your home network when it can, and through Roborock's cloud otherwise (maps always come through the cloud). It remembers the robot's address, and looks for it on the network if needed, so a cloud outage doesn't cut you off. Settings → About shows which ways are up.
 - On macOS, the app you start it from (Terminal, iTerm…) needs **Local Network** access for that direct link: System Settings → Privacy & Security → Local Network. Without it the app can only use the cloud, and it tells you so.
-- A log of what the app did, connections included, is kept in `data/app.log` (it rotates, so it stays small).
+- A log of what the app did, connections included, is kept in the local data folder as `app.log` (it rotates, so it stays small).
 
 ## Development
 

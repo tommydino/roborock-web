@@ -9,10 +9,13 @@ from __future__ import annotations
 import argparse
 import hashlib
 import logging
-from logging.handlers import RotatingFileHandler
+import os
+import shutil
+import sys
 import threading
 import webbrowser
 from contextlib import asynccontextmanager
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Any
 
@@ -26,6 +29,72 @@ from roborock.exceptions import RoborockException
 ROOT = Path(__file__).parent
 STATIC = ROOT / "static"
 BUNDLE = STATIC / "dist" / "main.js"  # built from web/*.ts by `npm run build`
+
+
+def persistent_data_dir(root: Path) -> Path:
+    """Use a per-user data folder so replacing the downloaded app keeps sign-in."""
+    configured = os.environ.get("ROBOROCK_WEB_DATA_DIR")
+    if configured:
+        data_dir = Path(configured).expanduser()
+    elif sys.platform == "darwin":
+        data_dir = Path.home() / "Library" / "Application Support" / "Roborock Web" / "data"
+    elif os.name == "nt":
+        data_dir = Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local")) / "Roborock Web" / "data"
+    else:
+        data_home = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local" / "share")).expanduser()
+        data_dir = data_home / "roborock-web" / "data"
+
+    legacy_dirs = [root / "data"]
+    # ZIP downloads are often unpacked into a new sibling directory. Import
+    # state from earlier Roborock Web copies once, without replacing newer data.
+    parents = {root.parent, Path.home() / "Downloads"}
+    for parent in parents:
+        try:
+            legacy_dirs.extend(
+                child / "data"
+                for child in parent.iterdir()
+                if child.is_dir() and child.name.casefold().startswith(("roborock-web", "roborock web"))
+            )
+        except OSError:
+            continue
+
+    data_dir.mkdir(parents=True, exist_ok=True)
+    session_file = data_dir / "session.json"
+    if not session_file.exists():
+        target = data_dir.resolve()
+        candidates: list[Path] = []
+        seen: set[Path] = set()
+        for path in legacy_dirs:
+            source = path.resolve()
+            if source == target or source in seen or not path.is_dir():
+                continue
+            seen.add(source)
+            candidates.append(path)
+        session_sources = [path for path in candidates if (path / "session.json").is_file()]
+        session_sources.sort(key=lambda path: (path / "session.json").stat().st_mtime, reverse=True)
+        source = next((path for path in candidates if path == root / "data" and (path / "session.json").is_file()), None)
+        if source is None:
+            source = session_sources[0] if session_sources else next((p for p in candidates if p == root / "data"), None)
+        if source is not None:
+            for item in source.iterdir():
+                destination = data_dir / item.name
+                if destination.exists():
+                    continue
+                try:
+                    if item.is_dir():
+                        shutil.copytree(item, destination)
+                    else:
+                        shutil.copy2(item, destination)
+                except OSError as err:
+                    logging.getLogger(__name__).warning("Could not migrate app data from %s: %s", source, err)
+
+    session_file = data_dir / "session.json"
+    if session_file.exists():
+        try:
+            os.chmod(session_file, 0o600)
+        except OSError as err:
+            logging.getLogger(__name__).warning("Could not restrict permissions on the saved session: %s", err)
+    return data_dir
 
 
 def code_fingerprint() -> str:
@@ -44,7 +113,7 @@ def ui_outdated() -> bool:
     return newest > BUNDLE.stat().st_mtime
 
 
-def create_app(demo: bool) -> FastAPI:
+def create_app(demo: bool, data_dir: Path | None = None) -> FastAPI:
     started_with = code_fingerprint()
     if demo:
         from demo import DemoService
@@ -53,7 +122,7 @@ def create_app(demo: bool) -> FastAPI:
     else:
         from robot import RoborockService
 
-        service = RoborockService(ROOT / "data")
+        service = RoborockService(data_dir or persistent_data_dir(ROOT))
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
@@ -191,17 +260,17 @@ def main() -> None:
     parser.add_argument("--debug", action="store_true")
     args = parser.parse_args()
     logging.basicConfig(level=logging.DEBUG if args.debug else logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+    data_dir = None if args.demo else persistent_data_dir(ROOT)
     if not args.demo:
-        # Also keep a log in data/, so connection trouble can be looked into afterwards.
-        (ROOT / "data").mkdir(exist_ok=True)
-        log_file = RotatingFileHandler(ROOT / "data" / "app.log", maxBytes=1_000_000, backupCount=2)
+        # Keep a small diagnostic log alongside persistent local app data.
+        log_file = RotatingFileHandler(data_dir / "app.log", maxBytes=1_000_000, backupCount=2)
         log_file.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
         logging.getLogger().addHandler(log_file)
     url = f"http://localhost:{args.port}"
     print(f"\n  Roborock is running at {url}" + ("  (demo mode)" if args.demo else "") + "\n  Press Ctrl+C to stop.\n")
     if not args.no_browser:
         threading.Timer(1.2, webbrowser.open, [url]).start()
-    uvicorn.run(create_app(args.demo), host=args.host, port=args.port, log_level="warning")
+    uvicorn.run(create_app(args.demo, data_dir), host=args.host, port=args.port, log_level="warning")
 
 
 if __name__ == "__main__":
