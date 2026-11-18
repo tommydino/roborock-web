@@ -111,7 +111,7 @@ function runDetailHtml(): string {
         <input id="run-progress" type="range" min="0" max="1000" value="${routeProgress}">
         <span id="run-progress-label">${fmtDuration(0)} / ${fmtDuration(duration)}</span>
       </div>
-      <p class="run-disclaimer">Playback follows the saved route. The robot did not provide timestamps for each point, so intermediate times are approximate.</p>`
+      <p class="run-disclaimer">The saved vacuum route plays first, followed by the separate mop route. Roborock doesn't provide timestamps for individual path points, so replay timing is approximate.</p>`
       : `<div class="run-no-route">No route map was saved for this run. New runs are saved with their route while this app is running.</div>`}
     <div class="run-timeline"><b>Run timeline</b><ol>
       ${timeline.map((event) => `<li><time>${clock(event.at)}</time><span>${esc(event.label)}</span></li>`).join("")}
@@ -131,23 +131,28 @@ function syncRouteProgress(): void {
   if (selectedRun?.route) {
     const clean = routeMetrics(selectedRun.route.path);
     const mop = routeMetrics(selectedRun.route.mop_path);
+    const totalLength = clean.length + mop.length;
     for (const group of [
-      { name: "clean", lines: selectedRun.route.path, metrics: clean },
-      { name: "mop", lines: selectedRun.route.mop_path, metrics: mop },
+      { name: "clean", lines: selectedRun.route.path, metrics: clean, offset: 0 },
+      // Roborock stores vacuum and mop trails as separate layers without
+      // timestamps for their points. Replay them in sequence so a second,
+      // unrelated-looking trail doesn't start drawing beside the playhead.
+      { name: "mop", lines: selectedRun.route.mop_path, metrics: mop, offset: clean.length },
     ]) {
       let lineOffset = 0;
       const lengths = group.lines.map((line) => routeMetrics([line]).length);
       card.querySelectorAll<SVGPolylineElement>(`[data-route-group="${group.name}"]`).forEach((line, index) => {
         const lineLength = lengths[index] ?? 0;
-        const shown = Math.max(0, Math.min(lineLength, progress * group.metrics.length - lineOffset));
+        const shown = Math.max(0, Math.min(lineLength, progress * totalLength - group.offset - lineOffset));
         line.style.strokeDasharray = `${(shown / Math.max(lineLength, 1)) * 1000} 1000`;
         lineOffset += lineLength;
       });
     }
     const playhead = card.querySelector<SVGGElement>("#run-playhead");
-    if (playhead && clean.length > 0) {
-      const target = Math.min(clean.length, progress * clean.length);
-      const seg = clean.segments.find((s) => target <= s.from + s.length) ?? clean.segments[clean.segments.length - 1];
+    const route = routeMetrics([...selectedRun.route.path, ...selectedRun.route.mop_path]);
+    if (playhead && route.length > 0) {
+      const target = Math.min(route.length, progress * route.length);
+      const seg = route.segments.find((s) => target <= s.from + s.length) ?? route.segments[route.segments.length - 1];
       const local = Math.max(0, Math.min(1, (target - seg.from) / seg.length));
       playhead.setAttribute("transform", `translate(${seg.a[0] + (seg.b[0] - seg.a[0]) * local} ${seg.a[1] + (seg.b[1] - seg.a[1]) * local})`);
       playhead.setAttribute("visibility", progress > 0 ? "visible" : "hidden");
