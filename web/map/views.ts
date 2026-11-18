@@ -6,6 +6,7 @@ import { S, type ViewMode } from "../state";
 import { drawSelection, refreshMapOverlays, roomAt, setTool, toggleRoom } from "./core";
 import { itemPx } from "./editor";
 import { freshImage, loadFreshness, renderFreshPanel } from "../freshness";
+import { loadSuspects, renderSusPanel, suspectsImage } from "../suspects";
 import { inner, mapImg, selCanvas, stage } from "./elements";
 import { buttonsReach, homeBox, stagePadding } from "./fit";
 import { groupObstacles, OBSTACLE_ICON } from "./layers";
@@ -25,12 +26,16 @@ export function setViewMode(mode: ViewMode): void {
   refreshMapOverlays();
   if (mode === "3d") void show3D();
   if (mode === "fresh") void loadFreshness();
+  if (mode === "suspects") void loadSuspects();
 }
 
 /** The base image for the current flat view. */
 export function viewImage(): string {
   if (!S.map) return "";
-  return S.viewMode === "plan" ? planImage() : S.viewMode === "fresh" ? freshImage() : S.map.base;
+  if (S.viewMode === "plan") return planImage();
+  if (S.viewMode === "fresh") return freshImage();
+  if (S.viewMode === "suspects") return suspectsImage();
+  return S.map.base;
 }
 
 export function syncViewChrome(): void {
@@ -41,7 +46,9 @@ export function syncViewChrome(): void {
   });
   inner.classList.toggle("plan", S.viewMode === "plan");
   inner.classList.toggle("fresh", S.viewMode === "fresh");
+  inner.classList.toggle("suspects", S.viewMode === "suspects");
   renderFreshPanel();
+  renderSusPanel();
   stage.classList.toggle("is-3d", is3d);
   $("#map3d").hidden = !is3d;
   map3d?.setActive(is3d);
@@ -230,7 +237,7 @@ function blend(base: RGBA, over: RGBA): RGBA {
 
 // Redraw what's drawn with theme colours when the theme changes (web/theme.ts).
 document.addEventListener("themechange", () => {
-  if (S.map && (S.viewMode === "plan" || S.viewMode === "fresh")) mapImg.src = viewImage();
+  if (S.map && (S.viewMode === "plan" || S.viewMode === "fresh" || S.viewMode === "suspects")) mapImg.src = viewImage();
   if (S.mask) drawSelection();
   map3d?.applyTheme();
 });

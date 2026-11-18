@@ -7,6 +7,7 @@ import { $, closest, cssVar, esc, fmtArea, fmtDuration, fmtWhen, hexRgb, icon, t
 import { decodeMask, refreshMapOverlays, toBase, toggleRoom } from "./map/core";
 import { mapImg, stage } from "./map/elements";
 import { estimateText, roomsArea } from "./estimate";
+import { loadSuspects, suspectTip } from "./suspects";
 import { doAction, passes } from "./panels";
 import { S } from "./state";
 import type { Freshness, RoomFreshness } from "./types";
@@ -84,9 +85,10 @@ setInterval(() => {
 /** A run started or finished: update the button now, and pick up the new run once it's recorded. */
 export function freshJobChanged(running: boolean): void {
   renderFreshPanel();
-  if (running || S.viewMode !== "fresh") return;
-  setTimeout(() => void loadFreshness(), 3_000);
-  setTimeout(() => void loadFreshness(), 45_000); // the robot can take a moment to file the run
+  if (running) return;
+  const reload = () => (S.viewMode === "fresh" ? loadFreshness() : S.viewMode === "suspects" ? loadSuspects() : undefined);
+  setTimeout(() => void reload(), 3_000);
+  setTimeout(() => void reload(), 45_000); // the robot can take a moment to file the run
 }
 
 /* ---- the map image ---- */
@@ -176,9 +178,9 @@ function canvas(w: number, h: number): HTMLCanvasElement {
 
 /* ---- hover ---- */
 
-/** What the Freshness view says about the spot under the pointer (null hides the tip). */
+/** What the Freshness or Suspects view says about the spot under the pointer (null hides the tip). */
 export function freshHover(e: PointerEvent | null): void {
-  const text = e && S.viewMode === "fresh" ? describe(e) : null;
+  const text = !e ? null : S.viewMode === "fresh" ? describe(e) : S.viewMode === "suspects" ? suspectTip(e) : null;
   tip.hidden = !text;
   if (!e || !text) return;
   tip.innerHTML = text;

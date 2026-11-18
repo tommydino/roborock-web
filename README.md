@@ -75,12 +75,13 @@ While you're drawing a cleaning zone or editing walls, dragging draws instead of
 
 ## Map views
 
-Switch views with **2D / 3D / Plan / Freshness** above the map. The app remembers your choice.
+Switch views with **2D / 3D / Plan / Freshness / Suspects** above the map. The app remembers your choice.
 
 - **2D**: the colour map, with the robot's path.
 - **3D**: your home with raised walls and furniture, the robot and dock as little models, and invisible walls and zones as tinted glass. **Drag to turn** it, swipe with two fingers to move, pinch to zoom, and click rooms to pick them. Zones, go-to and editing switch back to 2D. The 3D library ([three.js](https://threejs.org), MIT) is bundled into a separate file that only loads the first time you open 3D.
 - **Plan**: an architect-style drawing with walls, carpets and a 1 m grid. Each room shows its floor area, and the footer adds up the area of the whole home or of the rooms you picked.
 - **Freshness**: the floor coloured by how long ago each spot was cleaned. See below.
+- **Suspects**: things that come and go on your floor, found from spots the robot usually reaches but sometimes can't. See below.
 
 ### What's on the map
 
@@ -102,6 +103,17 @@ The phone app tells you what the robot is doing now. Freshness tells you what it
 - **Recent runs** lists the last runs with their rooms, time, area and whether it mopped.
 
 The app records each run the robot finishes **while the app is running**, with its path. It also fills in older runs from the robot's own list of recent cleans. Those don't come with a path, so they're listed but don't colour the map. A run counts as cleaning a room once it covered half of its floor. History stays on your computer in `data/history-<robot>.json` and keeps the last 120 days.
+
+## Suspects
+
+A laundry basket, a bag, a chair pulled out: things that stand on the floor for a few days get in the robot's way. Suspects finds them in the same history Freshness uses, from spots the robot reaches on most runs like it but missed, as the same hole, on several runs in a row.
+
+- **The map** marks each suspect with a numbered evidence tag: red while it's still there (**At large**), orange just after it left, yellow when it's long gone, grey once its case is closed. Hatched spots are **permanent residents**, floor it never reaches at all (usually under furniture).
+- **The panel** has a wanted poster for each one: its rough size, room, how often it was in the way, and first and last seen. **Name a suspect** ("Laundry basket") and the name sticks to that spot. A named suspect that's been clear for 3 runs is **Case closed**.
+- **The tape** steps through the runs. Press play to watch who arrived, stood there and left.
+- A **person of interest** left a slightly different hole each time, so it might just be the robot taking another line.
+
+Rooms need 10 finished runs with a map before they can have suspects. Runs are compared only with runs that covered the room in a similar way, so a schedule that keeps off the walls isn't mistaken for clutter. Suspects are guesses from where the robot couldn't go, not things it saw.
 
 ## Editing the map
 
@@ -167,8 +179,9 @@ Python changes need a server restart. If the app notices code changed since it s
 | `robot.py` | Login session and robot control (python-roborock) |
 | `maprender.py` | Turns the robot's raw map into a soft PNG, a room mask, and walls/zones for the editor |
 | `history.py` | Cleaning history: each run's coverage, and room freshness worked out from it |
+| `suspects.py` | Suspects: things that come and go on the floor, worked out from the same history |
 | `demo.py` | The simulated robot behind `--demo` |
-| `web/` | The interface in TypeScript: `main.ts` (start-up), `panels.ts` (the control panel: status, mode, dock and the main buttons), `session.ts` (sign-in, polling), `settings.ts`, `freshness.ts`, `map/` (map, pan & zoom, editor, views, fit), `map3d.ts` (3D) |
+| `web/` | The interface in TypeScript: `main.ts` (start-up), `panels.ts` (the control panel: status, mode, dock and the main buttons), `session.ts` (sign-in, polling), `settings.ts`, `freshness.ts`, `suspects.ts`, `map/` (map, pan & zoom, editor, views, fit), `map3d.ts` (3D) |
 | `static/` | `index.html`, `styles.css`, and the built bundle in `dist/` |
 
 ## License

@@ -4,6 +4,7 @@
 import { $, $$, clamp, closest, cssVar, esc, fmtArea, hexRgb, icon, loadImg, pct, toast } from "../dom";
 import { doAction, renderActions, renderStatus } from "../panels";
 import { freshLabel, freshMapChanged } from "../freshness";
+import { renderSuspectTags, suspectsMapChanged } from "../suspects";
 import { pollMap } from "../session";
 import { S, type Tool } from "../state";
 import type { MapResponse, Mask, Point } from "../types";
@@ -70,6 +71,7 @@ export async function setMap(res: Extract<MapResponse, { image: string }>): Prom
   renderMarkers();
   sync3D(true);
   freshMapChanged();
+  suspectsMapChanged();
   if (S.status) renderStatus();
 }
 
@@ -88,6 +90,7 @@ function renderMapSelect(): void {
 export function refreshMapOverlays(): void {
   renderShapes();
   renderLabels();
+  renderSuspectTags();
   drawSelection();
   renderDraw();
   renderMapFoot();

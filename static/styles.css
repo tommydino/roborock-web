@@ -80,6 +80,22 @@
   --fresh-none-hatch: rgba(120, 128, 140, 0.35);
   --fresh-wall: #8b9099;
   --fresh-furniture: #d5d9df;
+  /* Suspects: an evidence-board paper floor; spots glow mustard to crimson by how often something stood there. */
+  --sus-paper: #f7f3ea;
+  --sus-wall: #6f6a62;
+  --sus-furniture: #e2ddd2;
+  --sus-nodata: #ebe8e1;
+  --sus-resident: #b5afa4;
+  --sus-hatch: rgba(111, 106, 98, 0.35);
+  --sus-0: #f2d27b;
+  --sus-2: #d9662f;
+  --sus-3: #b3261e;
+  --sus-closed: #cfcac0;
+  --sus-unchecked: #c7bfd9;
+  --sus-ghost: #b3261e;
+  --sus-trace: #ecdcb4;
+  --sus-tag: #f6c945;
+  --sus-tag-ink: #1c1917;
 
   /* Density: compact by default (short laptop windows), roomier on taller ones. */
   --rail-w: 360px;
@@ -159,6 +175,19 @@
   --fresh-none-hatch: rgba(160, 170, 190, 0.22);
   --fresh-wall: #a3a9b3;
   --fresh-furniture: #2c3444;
+  --sus-paper: #1c2230;
+  --sus-wall: #a7a196;
+  --sus-furniture: #2a3040;
+  --sus-nodata: #202736;
+  --sus-resident: #4a4f5c;
+  --sus-hatch: rgba(190, 180, 160, 0.2);
+  --sus-0: #6b5a2a;
+  --sus-2: #d9783a;
+  --sus-3: #ff8a70;
+  --sus-closed: #3d4250;
+  --sus-unchecked: #4a4566;
+  --sus-ghost: #ff8a70;
+  --sus-trace: #3a3524;
   --plan-paper: #182032;
   --plan-carpet: #1f2839;
   --plan-hatch: rgba(225, 205, 160, 0.14);
@@ -615,6 +644,76 @@ svg.i.tiny { width: 12px; height: 12px; }
 .map-inner.fresh .room-label.due .area { color: inherit; font-weight: 750; }
 .map-inner.fresh .room-label.sel { background: var(--accent); color: #fff; }
 .map-inner.fresh .room-label.sel .area { color: rgba(255, 255, 255, 0.85); }
+
+/* Suspects on the map */
+.map-inner.suspects img { filter: none; image-rendering: pixelated; }
+.map-inner.suspects img.map-carpets, .map-inner.suspects .map-info .path, .map-inner.suspects .map-info .mop-path { display: none; }
+.sus-tags { position: absolute; inset: 0; pointer-events: none; }
+.sus-tag {
+  position: absolute; transform: translate(-50%, -100%) scale(var(--inv, 1)); transform-origin: 50% 100%;
+  display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 8px; border-radius: 6px 6px 6px 0;
+  background: var(--sus-tag); color: var(--sus-tag-ink); font-family: var(--font-map); font-size: 12px; font-weight: 800;
+  box-shadow: 0 2px 8px rgba(28, 25, 23, 0.3), inset 0 -3px 0 rgba(28, 25, 23, 0.18); pointer-events: auto; cursor: pointer; white-space: nowrap;
+  transition: opacity 0.15s, box-shadow 0.15s;
+}
+.sus-tag::after { content: ""; position: absolute; left: 0; bottom: -6px; border: 3px solid transparent; border-left-color: var(--sus-tag-ink); border-top-color: var(--sus-tag-ink); opacity: 0.6; }
+.sus-tag.flip { transform: translate(-100%, -100%) scale(var(--inv, 1)); transform-origin: 100% 100%; border-radius: 6px 6px 0 6px; }
+.sus-tag.flip::after { left: auto; right: 0; border-left-color: transparent; border-right-color: var(--sus-tag-ink); }
+.sus-tag b { font-weight: 800; font-variant-numeric: tabular-nums; }
+.sus-tag span { max-width: 140px; overflow: hidden; text-overflow: ellipsis; font-weight: 700; }
+.sus-tag.closed { background: #d6d3cd; color: #57534e; }
+.sus-tag.poi { background: var(--card); color: var(--text); box-shadow: 0 2px 8px rgba(28, 25, 23, 0.25), inset 0 0 0 2px var(--sus-tag); }
+.sus-tag.poi b::after { content: "?"; margin-left: 1px; opacity: 0.6; }
+.sus-tag.away { opacity: 0.35; }
+.sus-tag.unchecked { opacity: 0.35; outline: 1.5px dashed var(--sus-tag-ink); outline-offset: 1px; }
+/* Only the Rooms tool picks things on the map: with Zone, Go to or the editor, tags step aside. */
+.map-inner:not(.rooms) .sus-tag { pointer-events: none; }
+.sus-tag.focus { box-shadow: 0 0 0 3px var(--text), 0 2px 8px rgba(28, 25, 23, 0.3); }
+
+/* ---------- the Suspects panel ---------- */
+
+.sus-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.sus-head h4 { margin: 0; font-size: 14px; line-height: 20px; font-weight: 700; }
+.sus-lede { margin: -6px 0 0; font-size: 13px; line-height: 1.45; color: var(--muted); }
+.sus-lede b { color: var(--text); }
+.sus-badge { display: inline-flex; align-items: center; gap: 4px; flex: none; margin-left: 8px; padding: 0 8px; border-radius: 999px; font-size: 11px; line-height: 20px; font-weight: 700; white-space: nowrap; }
+.sus-badge svg { width: 12px; height: 12px; stroke-width: 2.6; }
+.sus-badge.there { background: color-mix(in srgb, var(--sus-3) 14%, transparent); color: var(--sus-3); }
+.sus-badge.gone { background: var(--surface); color: var(--muted); }
+.sus-badge.closed { background: color-mix(in srgb, var(--ok) 14%, transparent); color: var(--ok); }
+.sus-head .sus-badge { margin-left: 0; }
+.sus-tape { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: var(--radius-sm); background: var(--surface); }
+.sus-tape-row { display: flex; align-items: center; gap: 8px; }
+.sus-tape-row input { flex: 1; min-width: 0; accent-color: var(--sus-3); }
+.sus-play { width: 30px; height: 30px; flex: none; border-radius: 50%; display: grid; place-items: center; background: var(--card); color: var(--text); box-shadow: inset 0 0 0 1px var(--card-border); }
+.sus-play svg { width: 14px; height: 14px; }
+.sus-tape-label { font-size: 12px; line-height: 16px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.sus-list { display: flex; flex-direction: column; gap: 8px; }
+.sus-poster { display: flex; gap: 10px; padding: 10px; border-radius: var(--radius-sm); border: 1px solid var(--card-border); background: var(--card); cursor: pointer; transition: border-color 0.15s, background-color 0.15s; }
+.sus-poster:hover { background: var(--surface); }
+.sus-poster.focus { border-color: var(--text); }
+.sus-poster.closed { opacity: 0.75; }
+.sus-num { flex: none; width: 26px; height: 26px; border-radius: 6px; display: grid; place-items: center; background: var(--sus-tag); color: var(--sus-tag-ink); font-family: var(--font-map); font-size: 13px; font-weight: 800; box-shadow: inset 0 -3px 0 rgba(28, 25, 23, 0.18); }
+.sus-poster.closed .sus-num { background: #d6d3cd; color: #57534e; }
+.sus-poster.poi .sus-num { background: var(--card); box-shadow: inset 0 0 0 2px var(--sus-tag); color: var(--text); }
+.sus-main { flex: 1; min-width: 0; }
+.sus-title { display: flex; align-items: center; justify-content: space-between; font-size: 13.5px; line-height: 20px; font-weight: 700; }
+.sus-facts { margin-top: 2px; font-size: 12px; line-height: 16px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.sus-quip { margin: 6px 0 0; font-size: 12.5px; line-height: 1.45; }
+.sus-acts { display: flex; gap: 12px; margin-top: 6px; }
+.link-btn { padding: 0; font-size: 12px; font-weight: 650; color: var(--accent); }
+.link-btn:hover { text-decoration: underline; }
+.sus-name { display: flex; gap: 6px; }
+.sus-name input { flex: 1; min-width: 0; height: 32px; padding: 0 10px; border-radius: 8px; border: 1px solid var(--card-border); background: var(--card); color: var(--text); font: inherit; font-size: 13px; }
+.sus-name .btn-soft { min-height: 32px; }
+.sus-residents summary { cursor: pointer; font-size: 13px; font-weight: 650; }
+.sus-residents p { margin: 8px 0 6px; font-size: 12.5px; line-height: 1.45; color: var(--muted); }
+.sus-residents ul { margin: 0; padding-left: 18px; font-size: 12.5px; line-height: 1.6; }
+.sus-legend { display: flex; flex-wrap: wrap; gap: 6px 12px; font-size: 12px; color: var(--muted); }
+.sus-legend span { display: inline-flex; align-items: center; gap: 5px; }
+.sus-legend i { display: inline-block; width: 12px; height: 12px; border-radius: 3px; box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.1); }
+.sus-legend i.resident { background: repeating-linear-gradient(-45deg, var(--sus-hatch) 0 1.5px, var(--sus-resident) 1.5px 5px); }
+.sus-legend i.nodata { background: repeating-linear-gradient(-45deg, var(--sus-hatch) 0 1.5px, var(--sus-nodata) 1.5px 5px); }
 
 /* ---------- the Freshness panel ---------- */
 

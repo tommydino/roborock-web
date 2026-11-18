@@ -10,6 +10,7 @@ import {
 import { centerOnRobot, resetView } from "./map/panzoom";
 import { get3D, setViewMode, show3D, syncViewChrome } from "./map/views";
 import { renderFreshPanel } from "./freshness";
+import { resetSuspects } from "./suspects";
 import { setNotify } from "./notify";
 import { doAction, renderActions, renderSkeletons, renderStatus, setHomePasses, setModeValue } from "./panels";
 import { logout, reconnect, refreshAuth, startLoops } from "./session";
@@ -151,6 +152,9 @@ $<HTMLSelectElement>("#device-select").addEventListener("change", (e) => {
   S.settings = null;
   S.fresh = null;
   S.freshAge = null;
+  S.sus = null;
+  S.susHeat = null;
+  resetSuspects();
   resetView(false);
   S.selected = [];
   S.zone = null;

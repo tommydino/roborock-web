@@ -31,6 +31,7 @@ KEEP_DAYS = 120
 DEFAULT_INTERVAL = 7  # days a room can go before it's due
 INTERVALS = [1, 2, 3, 7, 14]  # what the app offers
 RECENT_RUNS = 12  # how many runs the app lists
+NAME_REACH = 6  # blocks (30 cm): how far from a suspect its name may be pinned and still stick
 
 Line = list[tuple[float, float]]
 
@@ -109,6 +110,7 @@ class History:
         self._path = path
         self.runs: list[Run] = []
         self.intervals: dict[str, int] = {}
+        self.names: list[dict[str, Any]] = []  # names given to suspects: {flag, x, y (robot blocks), name, created}
         self.created = int(time.time())  # when this app started keeping track
         self.rev = 0
         if path and path.exists():
@@ -116,6 +118,7 @@ class History:
                 raw = json.loads(path.read_text())
                 self.created = int(raw.get("created") or self.created)
                 self.intervals = {str(k): int(v) for k, v in (raw.get("intervals") or {}).items()}
+                self.names = [n for n in raw.get("names") or [] if isinstance(n, dict) and n.get("name")]
                 for r in raw.get("runs") or []:
                     grid = r.pop("grid", None)
                     self.runs.append(Run(**r, grid=Grid(**grid) if grid else None))
@@ -148,11 +151,33 @@ class History:
         self.intervals[f"{flag}:{room}"] = days
         self._changed()
 
+    def name_suspect(self, flag: int | None, x: int, y: int, name: str, box: tuple[int, int, int, int] | None = None) -> None:
+        """Pin a name to a spot (robot block coordinates); an empty name takes it off again.
+        Names already pinned on the suspect (within reach of `box`, its extent) or close by are
+        replaced, so renaming doesn't pile them up. A name saved before the map was known
+        (flag None) counts for any map, as it does when names are attached."""
+        name = " ".join(str(name).split())[:30]
+        bx0, by0, bx1, by1 = box or (x, y, x, y)
+
+        def on_it(n: dict[str, Any]) -> bool:
+            if n.get("flag") is not None and flag is not None and n.get("flag") != flag:
+                return False
+            nx, ny = n.get("x"), n.get("y")
+            if not isinstance(nx, int) or not isinstance(ny, int):
+                return True  # unreadable: drop it while we're here
+            return bx0 - NAME_REACH <= nx <= bx1 + NAME_REACH and by0 - NAME_REACH <= ny <= by1 + NAME_REACH
+
+        keep = [n for n in self.names if not on_it(n)]
+        if name:
+            keep.append({"flag": flag, "x": int(x), "y": int(y), "name": name, "created": int(time.time())})
+        self.names = keep
+        self._changed()
+
     def _changed(self) -> None:
         self.rev += 1
         if not self._path:
             return
-        data = {"created": self.created, "intervals": self.intervals, "runs": [asdict(r) for r in self.runs]}
+        data = {"created": self.created, "intervals": self.intervals, "names": self.names, "runs": [asdict(r) for r in self.runs]}
         self._path.parent.mkdir(parents=True, exist_ok=True)
         tmp = self._path.with_suffix(".tmp")
         tmp.write_text(json.dumps(data, separators=(",", ":")))

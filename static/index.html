@@ -98,6 +98,7 @@
                   <button data-view="3d" aria-pressed="false" title="Rotate around your home in 3D">3D</button>
                   <button data-view="plan" aria-pressed="false" title="Floor plan with room sizes">Plan</button>
                   <button data-view="fresh" aria-pressed="false" title="When each room and spot was last cleaned">Freshness</button>
+                  <button data-view="suspects" aria-pressed="false" title="Things that come and go on your floor, found from spots the robot sometimes can't reach">Suspects</button>
                 </div>
               </div>
               <div class="head-tools" id="head-normal">
@@ -147,6 +148,7 @@
                 <svg class="map-draw" id="map-draw"></svg>
                 <div id="map-things" class="map-things"></div>
                 <div id="map-labels"></div>
+                <div id="sus-tags" class="sus-tags"></div>
                 <button class="marker shape-delete" id="shape-delete" data-act="edit-delete" title="Delete (⌫)" aria-label="Delete" hidden><svg class="i"><use href="#i-trash"/></svg></button>
                 <div class="marker dock-marker" id="dock-marker" hidden><svg class="i"><use href="#i-bolt"/></svg></div>
                 <div class="marker" id="robot-marker" hidden><div class="robot"><span class="nose"></span></div></div>
@@ -154,6 +156,7 @@
               <div class="fresh-tip" id="fresh-tip" hidden></div>
             </div>
             <aside class="fresh-panel" id="fresh-panel" hidden></aside>
+            <aside class="fresh-panel sus-panel" id="sus-panel" hidden></aside>
             </div>
             <div class="map-foot" id="map-foot"></div>
           </div>

@@ -138,6 +138,14 @@ def create_app(demo: bool) -> FastAPI:
     async def freshness(duid: str):
         return await (await ctrl(duid)).freshness()
 
+    @app.get("/api/devices/{duid}/suspects")
+    async def suspects(duid: str):
+        return await (await ctrl(duid)).suspects()
+
+    @app.post("/api/devices/{duid}/suspects/name")
+    async def name_suspect(duid: str, x: int = Body(...), y: int = Body(...), name: str = Body("")):
+        return await (await ctrl(duid)).name_suspect(x, y, name)
+
     @app.post("/api/devices/{duid}/action")
     async def action(duid: str, body: dict[str, Any] = Body(...)):
         name = body.pop("action", None)

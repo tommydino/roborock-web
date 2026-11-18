@@ -1,9 +1,9 @@
 // The app's one shared state object. Modules read and update it directly.
 
-import type { Auth, Device, Freshness, MapPayload, Mask, Point, RestrictionType, Settings, Status } from "./types";
+import type { Auth, Device, Freshness, MapPayload, Mask, Point, RestrictionType, Settings, Status, Suspects } from "./types";
 
 export type Tool = "rooms" | "zone" | "goto";
-export type ViewMode = "2d" | "3d" | "plan" | "fresh";
+export type ViewMode = "2d" | "3d" | "plan" | "fresh" | "suspects";
 export type Pt = [number, number];
 export type EditTool = "select" | RestrictionType | "merge" | "split" | "rename";
 
@@ -65,6 +65,8 @@ export interface AppState {
   settings: Settings | null;
   fresh: Freshness | null; // room freshness, loaded for the Freshness view
   freshAge: Mask | null; // its per-block ages, decoded
+  sus: Suspects | null; // things that come and go on the floor, loaded for the Suspects view
+  susHeat: Mask | null; // its per-block picture, decoded
   tab: "home" | "settings";
   pending: Pending; // mode changes waiting for the robot's answer
   lastMapAt: number;
@@ -77,7 +79,7 @@ export interface AppState {
 function savedViewMode(): ViewMode {
   try {
     const v = localStorage.getItem("view");
-    return v === "3d" || v === "plan" || v === "fresh" ? v : "2d";
+    return v === "3d" || v === "plan" || v === "fresh" || v === "suspects" ? v : "2d";
   } catch {
     return "2d";
   }
@@ -115,6 +117,8 @@ export const S: AppState = {
   settings: null,
   fresh: null,
   freshAge: null,
+  sus: null,
+  susHeat: null,
   tab: "home",
   pending: {},
   lastMapAt: 0,

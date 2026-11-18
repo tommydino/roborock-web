@@ -52,6 +52,7 @@ from roborock.web_api import RoborockApiClient
 import roborock.mqtt.roborock_session as _mqtt_session
 
 from history import Grid, History, Run, estimate_model, freshness, grid_from_map
+from suspects import pin_name, suspects
 from maprender import MapRenderer, RenderedMap
 
 _LOGGER = logging.getLogger(__name__)
@@ -218,6 +219,7 @@ class DeviceController:
         self._nicknames = nicknames or RoomNames(None)
         self.history = history or History(None)
         self._fresh: tuple[tuple, dict[str, Any]] | None = None
+        self._sus: tuple[tuple, dict[str, Any]] | None = None
         self._run_seen = False  # a run was going on at the last history check
         self._history_at = 0.0
         self._to_backfill: list[int] = []  # older runs from the robot's list, still to fetch
@@ -565,18 +567,38 @@ class DeviceController:
     async def estimates(self) -> dict[str, Any]:
         return estimate_model(self.history)
 
-    async def freshness(self) -> dict[str, Any]:
+    async def _history_map(self) -> RenderedMap | None:
+        """The map that history views are worked out on (fetched if the app has none yet)."""
         if self._map is None:
             async with self._map_lock:
                 if self._map is None:
                     await self._refresh_map()
-        if self._map is None:
+        return self._map
+
+    async def freshness(self) -> dict[str, Any]:
+        m = await self._history_map()
+        if m is None:
             return {"available": False}
         flag = self._p.status.current_map
-        key = (self.history.rev, self._map.version, flag, int(time.time() // 60))
+        key = (self.history.rev, m.version, flag, int(time.time() // 60))
         if self._fresh is None or self._fresh[0] != key:
-            self._fresh = (key, await asyncio.to_thread(freshness, self.history, self._map, flag))
+            self._fresh = (key, await asyncio.to_thread(freshness, self.history, m, flag))
         return self._fresh[1]
+
+    async def suspects(self) -> dict[str, Any]:
+        m = await self._history_map()
+        if m is None:
+            return {"available": False}
+        flag = self._p.status.current_map
+        # Runs only change it when one finishes; the map's image version covers a new layout.
+        key = (self.history.rev, m.image_version, flag)
+        if self._sus is None or self._sus[0] != key:
+            self._sus = (key, await asyncio.to_thread(suspects, self.history, m, flag))
+        return self._sus[1]
+
+    async def name_suspect(self, x: int, y: int, name: str) -> dict[str, Any]:
+        pin_name(self.history, await self.suspects(), self._p.status.current_map, x, y, name)
+        return await self.suspects()
 
     async def _refresh_map(self) -> None:
         p = self._p
