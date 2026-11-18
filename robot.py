@@ -704,7 +704,8 @@ class DeviceController:
             raise ValueError("Cleaning run not found")
         record_id = int(run_id)
         record = None
-        map_data_v2_rpc = None
+        map_data_v2 = None
+        map_transport_events: list[dict[str, Any]] = []
         command_errors = []
         try:
             record = await _send_history_command(
@@ -713,21 +714,20 @@ class DeviceController:
         except Exception as err:  # keep other raw replies if one command times out
             command_errors.append({"command": "get_clean_record", "error": str(err) or type(err).__name__})
 
-        # The map channel (protocol 301) timed out on this model. Test the
-        # same v2 command over its ordinary RPC channel too; its shorter limit
-        # prevents a diagnostic download from hanging for another 45 seconds.
-        try:
-            map_data_v2_rpc = await _send_history_command(
-                self._p.clean_summary.rpc_channel,
-                "get_clean_record_map_v2",
-                [record_id],
-                timeout=12,
-            )
-        except Exception as err:
-            command_errors.append({"command": "get_clean_record_map_v2_rpc", "error": str(err) or type(err).__name__})
+        # Historical maps require the map RPC decoder (protocols 300/301). A
+        # normal RPC channel cannot decode those replies, so trace the correct
+        # MQTT map channel and record only protocol numbers and payload sizes.
+        map_data_v2, map_transport_events, map_error = await _probe_history_map(
+            self._p.map_content.rpc_channel,
+            "get_clean_record_map_v2",
+            [record_id],
+            timeout=12,
+        )
+        if map_error:
+            command_errors.append({"command": "get_clean_record_map_v2", **map_error})
         features = self._p.device_features
         return {
-            "format": "roborock-history-diagnostics-v1",
+            "format": "roborock-history-diagnostics-v2",
             "run_id": run_id,
             "device": {
                 **self._identity(),
@@ -736,7 +736,8 @@ class DeviceController:
             },
             "stored_run": self.history.detail(run_id),
             "raw_clean_record": record,
-            "record_map_v2_rpc": _map_diagnostics(map_data_v2_rpc),
+            "record_map_v2": _map_diagnostics(map_data_v2),
+            "map_transport_events": map_transport_events,
             "command_errors": command_errors,
             "note": (
                 "Raw map data is a private floorplan. Block IDs and timestamps are included "
@@ -1238,6 +1239,71 @@ async def _send_history_command(
         finally:
             if original_timeout is not None:
                 module._TIMEOUT = original_timeout
+
+
+class _HistoryProtocolTrace(logging.Handler):
+    """Keep safe transport metadata; never format or store raw map payloads."""
+
+    def __init__(self) -> None:
+        super().__init__(logging.DEBUG)
+        self.events: list[dict[str, Any]] = []
+
+    def emit(self, record: logging.LogRecord) -> None:
+        message = record.msg if isinstance(record.msg, str) else ""
+        args = record.args if isinstance(record.args, tuple) else ()
+        event: dict[str, Any] | None = None
+        if "V1Channel received MQTT message" in message:
+            map_message = next((item for item in args if hasattr(item, "protocol")), None)
+            if map_message is not None:
+                payload = getattr(map_message, "payload", None)
+                event = {
+                    "event": "mqtt_message",
+                    "seq": getattr(map_message, "seq", None),
+                    "protocol": getattr(map_message, "protocol", None),
+                    "payload_bytes": len(payload) if isinstance(payload, bytes) else None,
+                }
+            elif len(args) >= 2:
+                event = {"event": "mqtt_message", "seq": args[0], "protocol": args[1]}
+        elif "Error decoding data protocol message" in message and args:
+            event = {"event": "data_decode_error", "error_type": str(args[0])}
+        elif "Exception while decoding message" in message and len(args) >= 2:
+            event = {"event": "map_decode_error", "seq": args[0], "error_type": str(args[1])}
+        elif "Received response (%s, request_id=%s)" in message and len(args) >= 2:
+            event = {"event": "rpc_response_decoded", "transport": str(args[0]), "request_id": args[1]}
+        if event is not None and len(self.events) < 40:
+            self.events.append(event)
+
+
+async def _probe_history_map(
+    channel: Any, method: str, params: list[Any], timeout: float
+) -> tuple[Any, list[dict[str, Any]], dict[str, Any] | None]:
+    """Probe a map command and capture response protocol metadata without payloads."""
+    logger = logging.getLogger(type(channel).__module__)
+    trace = _HistoryProtocolTrace()
+    old_level, old_propagate = logger.level, logger.propagate
+    module = importlib.import_module(type(channel).__module__)
+    inner_timeout_supported = getattr(module, "_TIMEOUT", None) is not None
+    logger.addHandler(trace)
+    logger.setLevel(logging.DEBUG)
+    # The library's map trace can include raw bytes on older versions. Keep
+    # these records away from the app log; the handler stores only safe fields.
+    logger.propagate = False
+    started = time.monotonic()
+    try:
+        raw = await _send_history_command(channel, method, params, timeout=timeout)
+        return raw, trace.events, None
+    except Exception as err:
+        return None, trace.events, {
+            "error": str(err) or type(err).__name__,
+            "error_type": type(err).__name__,
+            "elapsed_seconds": round(time.monotonic() - started, 2),
+            "rpc_module": type(channel).__module__,
+            "inner_timeout_seconds": timeout if inner_timeout_supported else None,
+        }
+    finally:
+        logger.removeHandler(trace)
+        logger.setLevel(old_level)
+        logger.propagate = old_propagate
 
 
 def _map_diagnostics(raw: Any) -> dict[str, Any]:
