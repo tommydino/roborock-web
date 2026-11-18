@@ -703,16 +703,21 @@ class DeviceController:
         if not run_id.isdigit() or not self.history.has(run_id):
             raise ValueError("Cleaning run not found")
         record_id = int(run_id)
-        record = await _send_history_command(
-            self._p.clean_summary.rpc_channel,
-            RoborockCommand.GET_CLEAN_RECORD,
-            [record_id],
-        )
-        map_data = await _send_history_command(
-            self._p.map_content.rpc_channel,
-            RoborockCommand.GET_CLEAN_RECORD_MAP,
-            [record_id],
-        )
+        record = None
+        map_data = None
+        command_errors = []
+        for label, channel, command in (
+            ("get_clean_record", self._p.clean_summary.rpc_channel, RoborockCommand.GET_CLEAN_RECORD),
+            ("get_clean_record_map", self._p.map_content.rpc_channel, RoborockCommand.GET_CLEAN_RECORD_MAP),
+        ):
+            try:
+                result = await _send_history_command(channel, command, [record_id])
+                if label == "get_clean_record":
+                    record = result
+                else:
+                    map_data = result
+            except Exception as err:  # keep the other raw reply if one command times out
+                command_errors.append({"command": label, "error": str(err) or type(err).__name__})
         features = self._p.device_features
         return {
             "format": "roborock-history-diagnostics-v1",
@@ -725,6 +730,7 @@ class DeviceController:
             "stored_run": self.history.detail(run_id),
             "raw_clean_record": record,
             "record_map": _map_diagnostics(map_data),
+            "command_errors": command_errors,
             "note": (
                 "Raw map data is a private floorplan. Block IDs and timestamps are included "
                 "for protocol analysis; undocumented values are not assigned event labels."
