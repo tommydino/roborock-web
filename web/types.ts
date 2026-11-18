@@ -230,7 +230,13 @@ export interface RunDetail {
   avoid_count: number | null;
   wash_count: number | null;
   route: { map: string; path: Polyline[]; mop_path: Polyline[] } | null;
-  map: { base: string; width: number; height: number } | null;
+  map: {
+    base: string;
+    width: number;
+    height: number;
+    rooms?: Array<{ id: number; name: string; x: number; y: number; area?: number }>;
+    charger?: { x: number; y: number } | null;
+  } | null;
 }
 
 export interface Freshness {

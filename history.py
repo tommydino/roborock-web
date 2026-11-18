@@ -116,12 +116,18 @@ def route_from_map(m: RenderedMap) -> dict[str, Any] | None:
     return {"map": m.image_version or m.version, "path": path, "mop_path": mop_path}
 
 
-def map_asset(m: RenderedMap) -> dict[str, Any]:
+def map_asset(m: RenderedMap, names: dict[int, str] | None = None) -> dict[str, Any]:
     """The floor image belonging to a route, stored once per image version."""
+    names = names or {}
     return {
         "base": "data:image/png;base64," + base64.b64encode(m.base_png).decode(),
         "width": m.width,
         "height": m.height,
+        "rooms": [
+            {"id": room_id, "name": names.get(room_id) or f"Room {room_id}", **point}
+            for room_id, point in sorted(m.rooms.items())
+        ],
+        "charger": m.charger,
     }
 
 

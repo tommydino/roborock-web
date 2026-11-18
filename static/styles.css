@@ -583,12 +583,17 @@ input[type="time"], .field { width: 100%; margin-top: 4px; border: 1px solid var
 .run-detail { display: flex; flex-direction: column; gap: 10px; padding: 12px; border: 1px solid var(--line); border-radius: 14px; background: var(--card); }
 .run-stats { display: flex; flex-wrap: wrap; gap: 6px; font-size: 12px; color: var(--muted); }
 .run-stats span { padding: 4px 7px; border-radius: 8px; background: var(--surface); }
-.run-map { position: relative; width: 100%; overflow: hidden; border-radius: 10px; background: var(--surface); }
+.run-map { position: relative; width: 100%; height: clamp(280px, 56vh, 600px); overflow: hidden; border-radius: 10px; background: var(--surface); }
 .run-map img, .run-map svg { position: absolute; inset: 0; width: 100%; height: 100%; }
-.run-map img { object-fit: fill; }
+.run-map img { object-fit: contain; }
 .run-map svg { overflow: visible; }
 .replay-line { fill: none; stroke: #147d67; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; opacity: .88; }
 .replay-line.mop { stroke: #238ce0; stroke-width: 2.8; opacity: .95; }
+.run-room-label { fill: #172033; stroke: rgba(255,255,255,.92); stroke-width: 5px; paint-order: stroke; text-anchor: middle; font-size: 18px; font-weight: 700; }
+.run-charger circle { fill: #fff; stroke: #177d68; stroke-width: 2.5px; }
+.run-charger text { fill: #177d68; text-anchor: middle; font-size: 12px; font-weight: 800; }
+.run-playhead circle:first-child { fill: #fff; stroke: #087e69; stroke-width: 3px; }
+.run-playhead-dot { fill: #087e69; }
 .replay-controls { display: grid; grid-template-columns: auto minmax(70px, 1fr) auto; align-items: center; gap: 8px; font-size: 11.5px; color: var(--muted); }
 .replay-controls .btn-soft { padding: 6px 9px; font-size: 12px; }
 .replay-controls .btn-soft svg { width: 14px; height: 14px; }

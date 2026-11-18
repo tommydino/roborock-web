@@ -31,16 +31,37 @@ export async function loadRunHistory(): Promise<void> {
 
 function routeSvg(run: RunDetail): string {
   if (!run.map || !run.route) return "";
-  const lines = (items: number[][][], cls: string) => items.map((line) => {
+  const lines = (items: number[][][], cls: string, group: string) => items.map((line, index) => {
     const points = line.map((p) => `${p[0]},${p[1]}`).join(" ");
-    return line.length > 1 ? `<polyline class="replay-line ${cls}" data-route-line points="${points}" pathLength="1000"/>` : "";
+    return line.length > 1 ? `<polyline class="replay-line ${cls}" data-route-line data-route-group="${group}" data-route-index="${index}" points="${points}" pathLength="1000"/>` : "";
   }).join("");
+  const rooms = (run.map.rooms ?? []).map((room) => `<text class="run-room-label" x="${room.x}" y="${room.y}">${esc(room.name)}</text>`).join("");
+  const charger = run.map.charger
+    ? `<g class="run-charger" transform="translate(${run.map.charger.x} ${run.map.charger.y})"><circle r="9"/><text y="3.5">⌂</text></g>`
+    : "";
   return `<div class="run-map" style="aspect-ratio:${run.map.width}/${run.map.height}">
     <img src="${run.map.base}" alt="Map for this cleaning run">
     <svg viewBox="0 0 ${run.map.width} ${run.map.height}" aria-label="Cleaning route">
-      ${lines(run.route.path, "clean")}${lines(run.route.mop_path, "mop")}
+      ${rooms}${charger}${lines(run.route.path, "clean", "clean")}${lines(run.route.mop_path, "mop", "mop")}
+      <g id="run-playhead" class="run-playhead" visibility="hidden"><circle r="7"/><circle class="run-playhead-dot" r="2.3"/></g>
     </svg>
   </div>`;
+}
+
+function routeMetrics(lines: number[][][]): { length: number; segments: Array<{ a: number[]; b: number[]; from: number; length: number }> } {
+  let length = 0;
+  const segments: Array<{ a: number[]; b: number[]; from: number; length: number }> = [];
+  for (const line of lines) {
+    for (let i = 1; i < line.length; i++) {
+      const a = line[i - 1];
+      const b = line[i];
+      const size = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      if (!Number.isFinite(size) || size <= 0) continue;
+      segments.push({ a, b, from: length, length: size });
+      length += size;
+    }
+  }
+  return { length, segments };
 }
 
 function runDetailHtml(): string {
@@ -65,12 +86,14 @@ function runDetailHtml(): string {
         <button class="btn-soft" data-run-play aria-label="Play route">${icon("play")}<span>Play route</span></button>
         <label class="visually-hidden" for="run-progress">Route progress</label>
         <input id="run-progress" type="range" min="0" max="1000" value="${routeProgress}">
-        <span id="run-progress-label">${fmtDuration(duration)}</span>
+        <span id="run-progress-label">${fmtDuration(0)} / ${fmtDuration(duration)}</span>
       </div>
       <p class="run-disclaimer">Playback follows the saved route. The robot did not provide timestamps for each point, so intermediate times are approximate.</p>`
       : `<div class="run-no-route">No route map was saved for this run. New runs are saved with their route while this app is running.</div>`}
     <div class="run-timeline"><b>Run timeline</b><ol>
       <li><time>${clock(run.begin)}</time><span>Cleaning started${startType ? ` · ${esc(startType)}` : ""}</span></li>
+      ${run.wash_count != null ? `<li><time>During</time><span>Mop washed ${run.wash_count} times</span></li>` : ""}
+      ${run.avoid_count != null ? `<li><time>During</time><span>${run.avoid_count} obstacle avoidance events</span></li>` : ""}
       <li><time>${clock(run.end)}</time><span>${esc(result)}${finishReason ? ` · ${esc(finishReason)}` : ""}</span></li>
     </ol></div>
     <p class="run-disclaimer">This is the event detail available from the robot's saved record. It doesn't include exact timestamps for room changes or individual mop washes.</p>
@@ -82,11 +105,36 @@ function syncRouteProgress(): void {
   const range = card?.querySelector<HTMLInputElement>("#run-progress");
   if (!card || !range) return;
   const progress = Number(range.value) / 1000;
-  card.querySelectorAll<SVGPolylineElement>("[data-route-line]").forEach((line) => {
-    line.style.strokeDasharray = `${Math.max(0.001, progress * 1000)} 1000`;
-  });
+  if (selectedRun?.route) {
+    const clean = routeMetrics(selectedRun.route.path);
+    const mop = routeMetrics(selectedRun.route.mop_path);
+    for (const group of [
+      { name: "clean", lines: selectedRun.route.path, metrics: clean },
+      { name: "mop", lines: selectedRun.route.mop_path, metrics: mop },
+    ]) {
+      let lineOffset = 0;
+      const lengths = group.lines.map((line) => routeMetrics([line]).length);
+      card.querySelectorAll<SVGPolylineElement>(`[data-route-group="${group.name}"]`).forEach((line, index) => {
+        const lineLength = lengths[index] ?? 0;
+        const shown = Math.max(0, Math.min(lineLength, progress * group.metrics.length - lineOffset));
+        line.style.strokeDasharray = `${(shown / Math.max(lineLength, 1)) * 1000} 1000`;
+        lineOffset += lineLength;
+      });
+    }
+    const playhead = card.querySelector<SVGGElement>("#run-playhead");
+    if (playhead && clean.length > 0) {
+      const target = Math.min(clean.length, progress * clean.length);
+      const seg = clean.segments.find((s) => target <= s.from + s.length) ?? clean.segments[clean.segments.length - 1];
+      const local = Math.max(0, Math.min(1, (target - seg.from) / seg.length));
+      playhead.setAttribute("transform", `translate(${seg.a[0] + (seg.b[0] - seg.a[0]) * local} ${seg.a[1] + (seg.b[1] - seg.a[1]) * local})`);
+      playhead.setAttribute("visibility", progress > 0 ? "visible" : "hidden");
+    }
+  }
   const label = card.querySelector<HTMLElement>("#run-progress-label");
-  if (selectedRun && label) label.textContent = fmtDuration(Math.round((selectedRun.duration ?? (selectedRun.end - selectedRun.begin)) * progress));
+  if (selectedRun && label) {
+    const duration = selectedRun.duration ?? (selectedRun.end - selectedRun.begin);
+    label.textContent = `${fmtDuration(Math.round(duration * progress))} / ${fmtDuration(duration)}`;
+  }
 }
 
 function renderRunHistory(): void {
@@ -98,7 +146,7 @@ function renderRunHistory(): void {
       const mode = run.mode?.replaceAll("_", " ");
       return `<li><button class="run-open" data-run="${esc(run.id)}"><span class="run-when">${esc(fmtWhen(run.begin))}</span>
         <span class="run-what">${fmtDuration(run.duration)} · ${fmtArea(run.area)}${mode ? ` · ${esc(mode)}` : ""}${run.mopped ? " · mopped" : ""}</span>
-        <span class="run-route-note">${run.mapped ? "Route available" : "Summary only"}</span></button></li>`;
+        <span class="run-route-note">${run.mapped ? "Route available · open replay" : run.source === "robot" ? "Open to load route map" : "Summary only"}</span></button></li>`;
     }).join("")}</ul>`
     : `<p class="muted">${runHistoryLoading ? "Loading run history…" : "No recent runs available."}</p>`;
   detail.innerHTML = runDetailHtml();

@@ -221,7 +221,6 @@ class DeviceController:
         self._run_seen = False  # a run was going on at the last history check
         self._history_at = 0.0
         self._to_backfill: list[int] = []  # older runs from the robot's list, still to fetch
-        self._record_maps: bool | None = None  # whether the robot hands out maps of past runs
         self._p = device.v1_properties
         self._renderer = MapRenderer()
         self._status_at = 0.0
@@ -534,7 +533,7 @@ class DeviceController:
                 grid = grid_from_map(self._map) if self._map else None
                 run_map = self._map
                 run = _run(ids[0], summary.last_clean_record, grid, "live", self._p.status.current_map, self._mode(), run_map)
-                self.history.add(run, map_asset(run_map) if run_map and run.route else None)
+                self.history.add(run, map_asset(run_map, self._room_names) if run_map and run.route else None)
             self._to_backfill = [rid for rid in ids[1:] if not self.history.has(str(rid))]
         # Fill in older runs from the robot's own list, one per look.
         if self._to_backfill:
@@ -546,19 +545,18 @@ class DeviceController:
         record = await self._p.clean_summary.get_clean_record(rid)
         grid = None
         rendered = None
-        if self._record_maps is not False:
-            # Not every robot hands out maps of past runs; ask once and remember.
-            try:
-                raw = await asyncio.wait_for(
-                    self._p.map_content.rpc_channel.send_command(RoborockCommand.GET_CLEAN_RECORD_MAP, params=[rid]), 20
-                )
-                rendered = await asyncio.to_thread(self._renderer.render, raw) if isinstance(raw, bytes) else None
-                grid = grid_from_map(rendered) if rendered else None
-            except Exception as err:  # noqa: BLE001
-                _LOGGER.info("No map for past runs from this robot: %s", err or type(err).__name__)
-            self._record_maps = grid is not None
+        # Map availability can vary between individual records. A missing map
+        # for one run must not disable map requests for every later run.
+        try:
+            raw = await asyncio.wait_for(
+                self._p.map_content.rpc_channel.send_command(RoborockCommand.GET_CLEAN_RECORD_MAP, params=[rid]), 20
+            )
+            rendered = await asyncio.to_thread(self._renderer.render, raw) if isinstance(raw, bytes) else None
+            grid = grid_from_map(rendered) if rendered else None
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.info("No map for past run %s from this robot: %s", rid, err or type(err).__name__)
         run = _run(rid, record, grid, "robot", None, rendered=rendered)
-        self.history.add(run, map_asset(rendered) if rendered and run.route else None)
+        self.history.add(run, map_asset(rendered, self._room_names) if rendered and run.route else None)
 
     def _mode(self) -> str | None:
         try:
@@ -583,6 +581,12 @@ class DeviceController:
         return self._fresh[1]
 
     async def run_detail(self, run_id: str) -> dict[str, Any] | None:
+        run = next((item for item in self.history.runs if item.id == run_id), None)
+        if run and run.source == "robot" and not run.route and run_id.isdigit():
+            # Retry on demand: the record map request can be temporarily
+            # unavailable during history sync, but should still be tried when
+            # the user opens that specific run.
+            await self._backfill(int(run_id))
         return self.history.detail(run_id)
 
     async def runs(self) -> list[dict[str, Any]]:
