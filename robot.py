@@ -727,7 +727,7 @@ class DeviceController:
             command_errors.append({"command": "get_clean_record_map_v2", **map_error})
         features = self._p.device_features
         return {
-            "format": "roborock-history-diagnostics-v2",
+            "format": "roborock-history-diagnostics-v3",
             "run_id": run_id,
             "device": {
                 **self._identity(),
@@ -1241,69 +1241,66 @@ async def _send_history_command(
                 module._TIMEOUT = original_timeout
 
 
-class _HistoryProtocolTrace(logging.Handler):
-    """Keep safe transport metadata; never format or store raw map payloads."""
-
-    def __init__(self) -> None:
-        super().__init__(logging.DEBUG)
-        self.events: list[dict[str, Any]] = []
-
-    def emit(self, record: logging.LogRecord) -> None:
-        message = record.msg if isinstance(record.msg, str) else ""
-        args = record.args if isinstance(record.args, tuple) else ()
-        event: dict[str, Any] | None = None
-        if "V1Channel received MQTT message" in message:
-            map_message = next((item for item in args if hasattr(item, "protocol")), None)
-            if map_message is not None:
-                payload = getattr(map_message, "payload", None)
-                event = {
-                    "event": "mqtt_message",
-                    "seq": getattr(map_message, "seq", None),
-                    "protocol": getattr(map_message, "protocol", None),
-                    "payload_bytes": len(payload) if isinstance(payload, bytes) else None,
-                }
-            elif len(args) >= 2:
-                event = {"event": "mqtt_message", "seq": args[0], "protocol": args[1]}
-        elif "Error decoding data protocol message" in message and args:
-            event = {"event": "data_decode_error", "error_type": str(args[0])}
-        elif "Exception while decoding message" in message and len(args) >= 2:
-            event = {"event": "map_decode_error", "seq": args[0], "error_type": str(args[1])}
-        elif "Received response (%s, request_id=%s)" in message and len(args) >= 2:
-            event = {"event": "rpc_response_decoded", "transport": str(args[0]), "request_id": args[1]}
-        if event is not None and len(self.events) < 40:
-            self.events.append(event)
-
-
 async def _probe_history_map(
     channel: Any, method: str, params: list[Any], timeout: float
 ) -> tuple[Any, list[dict[str, Any]], dict[str, Any] | None]:
-    """Probe a map command and capture response protocol metadata without payloads."""
-    logger = logging.getLogger(type(channel).__module__)
-    trace = _HistoryProtocolTrace()
-    old_level, old_propagate = logger.level, logger.propagate
+    """Probe a map command and observe its MQTT frames without saving payloads."""
+    events: list[dict[str, Any]] = []
+    transport_monitor = "unavailable"
+    unsubscribe = None
     module = importlib.import_module(type(channel).__module__)
     inner_timeout_supported = getattr(module, "_TIMEOUT", None) is not None
-    logger.addHandler(trace)
-    logger.setLevel(logging.DEBUG)
-    # The library's map trace can include raw bytes on older versions. Keep
-    # these records away from the app log; the handler stores only safe fields.
-    logger.propagate = False
+
+    def capture(message: Any) -> None:
+        protocol = getattr(message, "protocol", None)
+        try:
+            protocol_number = int(protocol)
+        except (TypeError, ValueError):
+            return
+        if protocol_number not in {101, 102, 300, 301} or len(events) >= 40:
+            return
+        payload = getattr(message, "payload", None)
+        events.append({
+            "event": "mqtt_message",
+            "seq": getattr(message, "seq", None),
+            "protocol": protocol_number,
+            "payload_bytes": len(payload) if isinstance(payload, bytes) else None,
+            "random": getattr(message, "random", None),
+            "timestamp": getattr(message, "timestamp", None),
+        })
+
+    # Map RPC is MQTT-only. Subscribe directly to its transport so a decoder
+    # or logger problem cannot make an empty event list look like no reply.
+    try:
+        strategies_cb = getattr(channel, "_rpc_strategies_cb", None)
+        strategies = strategies_cb() if callable(strategies_cb) else []
+        mqtt = next((item.channel for item in strategies if getattr(item, "name", None) == "mqtt"), None)
+        subscribe = getattr(mqtt, "subscribe", None)
+        if callable(subscribe):
+            unsubscribe = await subscribe(capture)
+            transport_monitor = "mqtt"
+            events.append({"event": "monitor_started", "transport": transport_monitor})
+        else:
+            events.append({"event": "trace_unavailable", "reason": "map MQTT channel not exposed"})
+    except Exception as err:
+        events.append({"event": "trace_unavailable", "reason": type(err).__name__})
+
     started = time.monotonic()
     try:
         raw = await _send_history_command(channel, method, params, timeout=timeout)
-        return raw, trace.events, None
+        return raw, events, None
     except Exception as err:
-        return None, trace.events, {
+        return None, events, {
             "error": str(err) or type(err).__name__,
             "error_type": type(err).__name__,
             "elapsed_seconds": round(time.monotonic() - started, 2),
             "rpc_module": type(channel).__module__,
             "inner_timeout_seconds": timeout if inner_timeout_supported else None,
+            "transport_monitored": transport_monitor,
         }
     finally:
-        logger.removeHandler(trace)
-        logger.setLevel(old_level)
-        logger.propagate = old_propagate
+        if unsubscribe:
+            unsubscribe()
 
 
 def _map_diagnostics(raw: Any) -> dict[str, Any]:
