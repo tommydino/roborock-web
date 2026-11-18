@@ -210,6 +210,7 @@ export interface RunSummary {
   area: number | null;
   complete: boolean | null;
   source: "live" | "robot" | "demo";
+  mode?: string | null;
   mapped: boolean; // the path is known, so it counts towards freshness
   mopped: boolean;
   rooms: number[]; // rooms it covered at least half of

@@ -182,6 +182,19 @@ class History:
             "route": route, "map": asset,
         }
 
+    def list(self) -> list[dict[str, Any]]:
+        result = []
+        for run in reversed(self.runs[-RECENT_RUNS:]):
+            route = run.route
+            result.append({
+                "id": run.id, "begin": run.begin, "end": run.end, "duration": run.duration,
+                "area": run.area, "complete": run.complete, "source": run.source,
+                "mapped": bool(route and self.maps.get(str(route.get("map")))),
+                "mopped": bool((route and route.get("mop_path")) or (run.grid and run.grid.mop)),
+                "rooms": [], "mode": run.mode,
+            })
+        return result
+
     def interval(self, flag: int | None, room: int) -> int:
         return self.intervals.get(f"{flag}:{room}", DEFAULT_INTERVAL)
 

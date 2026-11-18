@@ -1,15 +1,14 @@
 // Room freshness: when each room, and each spot, was last cleaned, from the history the
-// server keeps of every run. It's a map view of its own (the floor coloured by how long
-// ago it was cleaned) with a panel of rooms, what's due and the recent runs.
+// server keeps of every run. This map view colours the floor by how long ago it was cleaned.
 
 import { api, devicePath } from "./api";
-import { $, closest, cssVar, esc, fmtArea, fmtDuration, fmtWhen, hexRgb, icon, toast } from "./dom";
+import { $, closest, cssVar, esc, hexRgb, icon, toast } from "./dom";
 import { decodeMask, refreshMapOverlays, toBase, toggleRoom } from "./map/core";
 import { mapImg, stage } from "./map/elements";
 import { estimateText, roomsArea } from "./estimate";
 import { doAction, passes } from "./panels";
 import { S } from "./state";
-import type { Freshness, RoomFreshness, RunDetail } from "./types";
+import type { Freshness, RoomFreshness } from "./types";
 
 /** The colour steps, freshest first. A spot's age is in whole days since it was cleaned. */
 const STEPS = [
@@ -25,13 +24,8 @@ const NEVER = 255;
 const EVERY: Record<number, string> = { 1: "Every day", 2: "Every 2 days", 3: "Every 3 days", 7: "Every week", 14: "Every 2 weeks" };
 const DAY = 86400;
 
-const panel = $("#fresh-panel");
+const freshPanel = $("#fresh-panel");
 const tip = $("#fresh-tip");
-let selectedRun: RunDetail | null = null;
-let selectedRunId: string | null = null;
-let runLoading = false;
-let routeProgress = 1000;
-let routeTimer: number | null = null;
 
 const stepOf = (days: number) => STEPS.findIndex((s) => days <= s.upTo);
 const daysSince = (ts: number) => Math.floor((Date.now() / 1000 - ts) / DAY);
@@ -89,9 +83,13 @@ setInterval(() => {
 /** A run started or finished: update the button now, and pick up the new run once it's recorded. */
 export function freshJobChanged(running: boolean): void {
   renderFreshPanel();
-  if (running || S.viewMode !== "fresh") return;
-  setTimeout(() => void loadFreshness(), 3_000);
-  setTimeout(() => void loadFreshness(), 45_000); // the robot can take a moment to file the run
+  if (running) return;
+  const refreshHistory = () => {
+    void loadFreshness();
+    document.dispatchEvent(new Event("run-history-refresh"));
+  };
+  setTimeout(refreshHistory, 3_000);
+  setTimeout(refreshHistory, 45_000); // the robot can take a moment to file the run
 }
 
 /* ---- the map image ---- */
@@ -179,97 +177,6 @@ function canvas(w: number, h: number): HTMLCanvasElement {
   return el;
 }
 
-function clock(ts: number): string {
-  return new Date(ts * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-}
-
-function routeSvg(run: RunDetail): string {
-  if (!run.map || !run.route) return "";
-  const lines = (items: number[][][], cls: string) => items.map((line) => {
-    const points = line.map((p) => `${p[0]},${p[1]}`).join(" ");
-    return line.length > 1 ? `<polyline class="replay-line ${cls}" data-route-line points="${points}" pathLength="1000"/>` : "";
-  }).join("");
-  return `<div class="run-map" style="aspect-ratio:${run.map.width}/${run.map.height}">
-    <img src="${run.map.base}" alt="Map for this cleaning run">
-    <svg viewBox="0 0 ${run.map.width} ${run.map.height}" aria-label="Cleaning route">
-      ${lines(run.route.path, "clean")}${lines(run.route.mop_path, "mop")}
-    </svg>
-  </div>`;
-}
-
-function runDetailHtml(): string {
-  if (!selectedRunId) return "";
-  if (runLoading || !selectedRun) return `<section class="run-detail"><div class="history-head"><b>Cleaning run</b><button class="btn-soft" data-run-close>Close</button></div><p class="muted">Loading run details…</p></section>`;
-  const run = selectedRun;
-  const started = clock(run.begin);
-  const finished = clock(run.end);
-  const duration = run.duration ?? Math.max(0, run.end - run.begin);
-  const mode = run.mode ? run.mode.replaceAll("_", " ") : null;
-  const result = run.complete === true ? "Completed" : run.complete === false ? "Stopped before completion" : "Result not reported";
-  const startType = run.start_type?.replaceAll("_", " ") ?? null;
-  const finishReason = run.finish_reason?.replaceAll("_", " ") ?? null;
-  const stats = [fmtDuration(duration), fmtArea(run.area), mode, run.wash_count != null ? `${run.wash_count} mop washes` : null,
-    run.avoid_count != null ? `${run.avoid_count} obstacle avoidances` : null]
-    .filter((x): x is string => !!x).map((x) => `<span>${esc(x)}</span>`).join("");
-  return `<section class="run-detail">
-    <div class="history-head"><b>${esc(fmtWhen(run.begin))}</b><button class="btn-soft" data-run-close>Close</button></div>
-    <div class="run-stats">${stats}<span>${esc(result)}</span></div>
-    ${run.route && run.map ? `${routeSvg(run)}
-      <div class="replay-controls">
-        <button class="btn-soft" data-run-play aria-label="Play route">${icon("play")}<span>Play route</span></button>
-        <label class="visually-hidden" for="run-progress">Route progress</label>
-        <input id="run-progress" type="range" min="0" max="1000" value="${routeProgress}">
-        <span id="run-progress-label">${fmtDuration(duration)}</span>
-      </div>
-      <p class="run-disclaimer">Playback follows the saved route. The robot did not provide timestamps for each point, so intermediate times are approximate.</p>`
-      : `<div class="run-no-route">No route map was saved for this run. New runs are saved with their route while this app is running.</div>`}
-    <div class="run-timeline"><b>Run timeline</b><ol>
-      <li><time>${esc(started)}</time><span>Cleaning started${startType ? ` · ${esc(startType)}` : ""}</span></li>
-      <li><time>${esc(finished)}</time><span>${esc(result)}${finishReason ? ` · ${esc(finishReason)}` : ""}</span></li>
-    </ol></div>
-    <p class="run-disclaimer">This is the event detail available from the robot's saved record. It doesn't include exact timestamps for room changes or individual mop washes.</p>
-  </section>`;
-}
-
-function syncRouteProgress(): void {
-  const range = panel.querySelector<HTMLInputElement>("#run-progress");
-  if (!range) return;
-  const val = Number(range.value) / 1000;
-  panel.querySelectorAll<SVGPolylineElement>("[data-route-line]").forEach((line) => {
-    line.style.strokeDasharray = `${Math.max(0.001, val * 1000)} 1000`;
-  });
-  const label = panel.querySelector<HTMLElement>("#run-progress-label");
-  if (selectedRun && label) label.textContent = fmtDuration(Math.round((selectedRun.duration ?? (selectedRun.end - selectedRun.begin)) * val));
-}
-
-async function openRun(id: string): Promise<void> {
-  if (routeTimer != null) window.clearInterval(routeTimer);
-  routeTimer = null;
-  selectedRunId = id;
-  selectedRun = null;
-  runLoading = true;
-  routeProgress = 0;
-  renderFreshPanel();
-  try {
-    selectedRun = await api<RunDetail>(devicePath(`runs/${encodeURIComponent(id)}`));
-  } catch (e) {
-    toast(`Couldn't load this run: ${e instanceof Error ? e.message : e}`, true);
-    selectedRunId = null;
-  } finally {
-    runLoading = false;
-    renderFreshPanel();
-    syncRouteProgress();
-  }
-}
-
-function closeRun(): void {
-  if (routeTimer != null) window.clearInterval(routeTimer);
-  routeTimer = null;
-  selectedRunId = null;
-  selectedRun = null;
-  renderFreshPanel();
-}
-
 /* ---- hover ---- */
 
 /** What the Freshness view says about the spot under the pointer (null hides the tip). */
@@ -331,7 +238,7 @@ function swatch(r: RoomFreshness): string {
 
 export function renderFreshPanel(): void {
   const on = S.viewMode === "fresh";
-  panel.hidden = !on;
+  freshPanel.hidden = !on;
   $("#map-card").classList.toggle("is-fresh", on);
   if (!on) {
     tip.hidden = true;
@@ -340,11 +247,11 @@ export function renderFreshPanel(): void {
   const f = S.fresh;
   const m = S.map;
   if (!f || !m) {
-    panel.innerHTML = `<div class="skel" style="height:18px;width:50%"></div>${'<div class="skel" style="height:44px;margin-top:14px"></div>'.repeat(4)}`;
+    freshPanel.innerHTML = `<div class="skel" style="height:18px;width:50%"></div>${'<div class="skel" style="height:44px;margin-top:14px"></div>'.repeat(4)}`;
     return;
   }
   if (!f.available) {
-    panel.innerHTML = `<p class="muted">There's no map yet, so there's nothing to show. Run a full clean first.</p>`;
+    freshPanel.innerHTML = `<p class="muted">There's no map yet, so there's nothing to show. Run a full clean first.</p>`;
     return;
   }
   const names = new Map(m.rooms.map((r) => [r.id, r.name]));
@@ -377,64 +284,19 @@ export function renderFreshPanel(): void {
        ${est && !busy ? `<div class="estimate">${icon("clock", "i tiny")}${est}</div>` : ""}`
     : `<div class="fresh-ok">${icon("check")}Every room is within its interval</div>`;
 
-  const runs = (f.runs ?? [])
-    .map((run) => {
-      const where = run.rooms.length ? run.rooms.map((id) => esc(names.get(id) ?? `Room ${id}`)).join(", ") : run.mapped ? "Part of a room" : "No map for this run";
-      return `<li><button class="run-open" data-run="${esc(run.id)}"><span class="run-when">${esc(fmtWhen(run.begin))}</span><span class="run-what">${where}</span>
-        <span class="run-meta">${fmtDuration(run.duration)} · ${fmtArea(run.area)}${run.mopped ? ` · ${icon("drop", "i tiny")}mopped` : ""}</span></button></li>`;
-    })
-    .join("");
-
-  const empty = !f.tracked
-    ? `<div class="fresh-empty">${icon("history")}<div>Nothing recorded yet. Every run the robot finishes while this app is running is added here, so this fills in as it cleans.</div></div>`
-    : "";
-
-  panel.innerHTML = `
+  freshPanel.innerHTML = `
     <div class="fresh-head"><h4>Freshness</h4>${due.length ? `<span class="due-badge">${icon("clock")}${due.length} due</span>` : ""}</div>
-    ${empty}
     <div class="fresh-rooms">${rooms.map(row).join("")}</div>
     ${go}
-    ${runDetailHtml()}
     <div class="fresh-legend" aria-label="Map colours">
       ${STEPS.map((s, i) => `<span><i style="background:var(--fresh-${i})"></i>${s.label}</span>`).join("")}
       <span><i style="background:var(--fresh-${MISSED})"></i>Never reached</span>
       <span><i class="none"></i>No data yet</span>
     </div>
-    ${runs ? `<details class="fresh-runs" ${selectedRunId ? "open" : ""}><summary>Recent runs</summary><ul>${runs}</ul></details>` : ""}
-    <p class="fresh-note">${S.auth?.demo ? "Made-up history for the demo." : `History since ${since()} · ${f.tracked ?? 0} runs with a map<br>Runs are recorded while this app is running.`}</p>`;
-  syncRouteProgress();
+    <p class="fresh-note">${S.auth?.demo ? "Made-up room freshness for the demo." : `Room coverage history since ${since()} · ${f.tracked ?? 0} runs with a map`}</p>`;
 }
 
-panel.addEventListener("click", async (e) => {
-  const close = closest(e.target, "[data-run-close]");
-  if (close) { closeRun(); return; }
-  const runButton = closest<HTMLButtonElement>(e.target, "[data-run]");
-  if (runButton) { await openRun(runButton.dataset.run ?? ""); return; }
-  const play = closest<HTMLButtonElement>(e.target, "[data-run-play]");
-  if (play) {
-    if (routeTimer != null) {
-      window.clearInterval(routeTimer);
-      routeTimer = null;
-      play.querySelector("span")!.textContent = "Play route";
-    } else {
-      if (routeProgress >= 1000) routeProgress = 0;
-      play.querySelector("span")!.textContent = "Pause";
-      syncRouteProgress();
-      routeTimer = window.setInterval(() => {
-        routeProgress = Math.min(1000, routeProgress + 5);
-        const range = panel.querySelector<HTMLInputElement>("#run-progress");
-        if (range) range.value = String(routeProgress);
-        syncRouteProgress();
-        if (routeProgress >= 1000) {
-          if (routeTimer != null) window.clearInterval(routeTimer);
-          routeTimer = null;
-          const button = panel.querySelector<HTMLButtonElement>("[data-run-play] span");
-          if (button) button.textContent = "Play route";
-        }
-      }, 60);
-    }
-    return;
-  }
+freshPanel.addEventListener("click", async (e) => {
   const go = closest<HTMLButtonElement>(e.target, "[data-fresh-go]");
   if (go) {
     const ids = (S.fresh?.rooms ?? []).filter((r) => r.overdue && S.map?.rooms.some((x) => x.id === r.id)).map((r) => r.id);
@@ -459,14 +321,7 @@ panel.addEventListener("click", async (e) => {
   }
 });
 
-panel.addEventListener("input", (e) => {
-  const range = closest<HTMLInputElement>(e.target, "#run-progress");
-  if (!range) return;
-  routeProgress = Number(range.value);
-  syncRouteProgress();
-});
-
-panel.addEventListener("change", async (e) => {
+freshPanel.addEventListener("change", async (e) => {
   const sel = closest<HTMLSelectElement>(e.target, "[data-fresh-every]");
   if (!sel) return;
   try {

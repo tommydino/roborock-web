@@ -1,13 +1,179 @@
 // The Settings tab.
 
 import { api, devicePath } from "./api";
-import { $, $opt, errorMessage, esc, fmtArea, fmtDuration, fmtWhen, human, icon, toast } from "./dom";
+import { $, $opt, closest, errorMessage, esc, fmtArea, fmtDuration, fmtWhen, human, icon, toast } from "./dom";
 import { OPT_LABEL } from "./labels";
 import { blockedNote, doAction, setSmartPlanShown, smartPlanShown } from "./panels";
 import { S } from "./state";
 import { notifyEnabled, notifySupported, setNotify } from "./notify";
 import { themeChoice } from "./theme";
-import type { Choice, Settings } from "./types";
+import type { Choice, RunDetail, RunSummary, Settings } from "./types";
+
+let runHistory: RunSummary[] = [];
+let selectedRunId: string | null = null;
+let selectedRun: RunDetail | null = null;
+let runHistoryLoading = true;
+let routeProgress = 0;
+let routeTimer: number | null = null;
+
+export async function loadRunHistory(): Promise<void> {
+  runHistoryLoading = true;
+  renderRunHistory();
+  try {
+    runHistory = await api<RunSummary[]>(devicePath("runs"));
+  } catch (e) {
+    toast(`Couldn't load run history: ${errorMessage(e)}`, true);
+  } finally {
+    runHistoryLoading = false;
+  }
+  renderRunHistory();
+}
+
+function routeSvg(run: RunDetail): string {
+  if (!run.map || !run.route) return "";
+  const lines = (items: number[][][], cls: string) => items.map((line) => {
+    const points = line.map((p) => `${p[0]},${p[1]}`).join(" ");
+    return line.length > 1 ? `<polyline class="replay-line ${cls}" data-route-line points="${points}" pathLength="1000"/>` : "";
+  }).join("");
+  return `<div class="run-map" style="aspect-ratio:${run.map.width}/${run.map.height}">
+    <img src="${run.map.base}" alt="Map for this cleaning run">
+    <svg viewBox="0 0 ${run.map.width} ${run.map.height}" aria-label="Cleaning route">
+      ${lines(run.route.path, "clean")}${lines(run.route.mop_path, "mop")}
+    </svg>
+  </div>`;
+}
+
+function runDetailHtml(): string {
+  if (!selectedRunId) return "";
+  if (runHistoryLoading || !selectedRun) return `<section class="run-detail"><div class="history-head"><b>Cleaning run</b><button class="btn-soft" data-run-close>Close</button></div><p class="muted">Loading run details…</p></section>`;
+  const run = selectedRun;
+  const clock = (ts: number) => new Date(ts * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  const duration = run.duration ?? Math.max(0, run.end - run.begin);
+  const result = run.complete === true ? "Completed" : run.complete === false ? "Stopped before completion" : "Result not reported";
+  const mode = run.mode?.replaceAll("_", " ") ?? null;
+  const startType = run.start_type?.replaceAll("_", " ") ?? null;
+  const finishReason = run.finish_reason?.replaceAll("_", " ") ?? null;
+  const stats = [fmtDuration(duration), fmtArea(run.area), mode,
+    run.wash_count != null ? `${run.wash_count} mop washes` : null,
+    run.avoid_count != null ? `${run.avoid_count} avoidance events` : null]
+    .filter((x): x is string => !!x).map((x) => `<span>${esc(x)}</span>`).join("");
+  return `<section class="run-detail">
+    <div class="history-head"><b>${esc(fmtWhen(run.begin))}</b><button class="btn-soft" data-run-close>Close</button></div>
+    <div class="run-stats">${stats}<span>${esc(result)}</span></div>
+    ${run.route && run.map ? `${routeSvg(run)}
+      <div class="replay-controls">
+        <button class="btn-soft" data-run-play aria-label="Play route">${icon("play")}<span>Play route</span></button>
+        <label class="visually-hidden" for="run-progress">Route progress</label>
+        <input id="run-progress" type="range" min="0" max="1000" value="${routeProgress}">
+        <span id="run-progress-label">${fmtDuration(duration)}</span>
+      </div>
+      <p class="run-disclaimer">Playback follows the saved route. The robot did not provide timestamps for each point, so intermediate times are approximate.</p>`
+      : `<div class="run-no-route">No route map was saved for this run. New runs are saved with their route while this app is running.</div>`}
+    <div class="run-timeline"><b>Run timeline</b><ol>
+      <li><time>${clock(run.begin)}</time><span>Cleaning started${startType ? ` · ${esc(startType)}` : ""}</span></li>
+      <li><time>${clock(run.end)}</time><span>${esc(result)}${finishReason ? ` · ${esc(finishReason)}` : ""}</span></li>
+    </ol></div>
+    <p class="run-disclaimer">This is the event detail available from the robot's saved record. It doesn't include exact timestamps for room changes or individual mop washes.</p>
+  </section>`;
+}
+
+function syncRouteProgress(): void {
+  const card = document.querySelector<HTMLElement>("#history-runs");
+  const range = card?.querySelector<HTMLInputElement>("#run-progress");
+  if (!range) return;
+  const progress = Number(range.value) / 1000;
+  card.querySelectorAll<SVGPolylineElement>("[data-route-line]").forEach((line) => {
+    line.style.strokeDasharray = `${Math.max(0.001, progress * 1000)} 1000`;
+  });
+  const label = card.querySelector<HTMLElement>("#run-progress-label");
+  if (selectedRun && label) label.textContent = fmtDuration(Math.round((selectedRun.duration ?? (selectedRun.end - selectedRun.begin)) * progress));
+}
+
+function renderRunHistory(): void {
+  const list = $opt<HTMLElement>("#history-runs-list");
+  const detail = $opt<HTMLElement>("#history-run-detail");
+  if (!list || !detail) return;
+  list.innerHTML = runHistory.length
+    ? `<div class="history-runs-label">Recent runs</div><ul class="history-runs-list">${runHistory.map((run) => {
+      const mode = run.mode?.replaceAll("_", " ");
+      return `<li><button class="run-open" data-run="${esc(run.id)}"><span class="run-when">${esc(fmtWhen(run.begin))}</span>
+        <span class="run-what">${fmtDuration(run.duration)} · ${fmtArea(run.area)}${mode ? ` · ${esc(mode)}` : ""}${run.mopped ? " · mopped" : ""}</span>
+        <span class="run-route-note">${run.mapped ? "Route available" : "Summary only"}</span></button></li>`;
+    }).join("")}</ul>`
+    : `<p class="muted">${runHistoryLoading ? "Loading run history…" : "No recent runs available."}</p>`;
+  detail.innerHTML = runDetailHtml();
+  syncRouteProgress();
+}
+
+async function openHistoryRun(id: string): Promise<void> {
+  if (routeTimer != null) window.clearInterval(routeTimer);
+  routeTimer = null;
+  selectedRunId = id;
+  selectedRun = null;
+  runHistoryLoading = true;
+  routeProgress = 0;
+  renderRunHistory();
+  try {
+    selectedRun = await api<RunDetail>(devicePath(`runs/${encodeURIComponent(id)}`));
+  } catch (e) {
+    toast(`Couldn't load this run: ${errorMessage(e)}`, true);
+    selectedRunId = null;
+  } finally {
+    runHistoryLoading = false;
+    renderRunHistory();
+  }
+}
+
+const settingsRoot = $("#settings");
+settingsRoot.addEventListener("click", async (e) => {
+  const close = closest(e.target, "[data-run-close]");
+  if (close) {
+    if (routeTimer != null) window.clearInterval(routeTimer);
+    routeTimer = null;
+    selectedRunId = null;
+    selectedRun = null;
+    renderRunHistory();
+    return;
+  }
+  const run = closest<HTMLButtonElement>(e.target, "[data-run]");
+  if (run) { await openHistoryRun(run.dataset.run ?? ""); return; }
+  const play = closest<HTMLButtonElement>(e.target, "[data-run-play]");
+  if (!play) return;
+  if (routeTimer != null) {
+    window.clearInterval(routeTimer);
+    routeTimer = null;
+    play.querySelector("span")!.textContent = "Play route";
+    return;
+  }
+  if (routeProgress >= 1000) routeProgress = 0;
+  play.querySelector("span")!.textContent = "Pause";
+  const range = settingsRoot.querySelector<HTMLInputElement>("#run-progress");
+  if (range) range.value = String(routeProgress);
+  syncRouteProgress();
+  routeTimer = window.setInterval(() => {
+    routeProgress = Math.min(1000, routeProgress + 5);
+    const slider = settingsRoot.querySelector<HTMLInputElement>("#run-progress");
+    if (slider) slider.value = String(routeProgress);
+    syncRouteProgress();
+    if (routeProgress >= 1000) {
+      if (routeTimer != null) window.clearInterval(routeTimer);
+      routeTimer = null;
+      const label = settingsRoot.querySelector<HTMLElement>("[data-run-play] span");
+      if (label) label.textContent = "Play route";
+    }
+  }, 60);
+});
+
+settingsRoot.addEventListener("input", (e) => {
+  const range = closest<HTMLInputElement>(e.target, "#run-progress");
+  if (!range) return;
+  routeProgress = Number(range.value);
+  syncRouteProgress();
+});
+
+document.addEventListener("run-history-refresh", () => {
+  if (S.tab === "settings") void loadRunHistory();
+});
 
 export async function loadSettings(): Promise<void> {
   const el = $("#settings");
@@ -19,6 +185,7 @@ export async function loadSettings(): Promise<void> {
   try {
     S.settings = await api<Settings>(devicePath("settings"));
     renderSettings();
+    void loadRunHistory();
   } catch (e) {
     el.innerHTML = `<div class="card">Couldn't load settings.<br><span class="muted">${esc(errorMessage(e))}</span></div>`;
   }
@@ -101,16 +268,18 @@ export function renderSettings(): void {
   }
 
   // History
-  if (s.summary) {
+  {
     const sm = s.summary;
-    let hist = `<div class="big-stats">
+    let hist = sm ? `<div class="big-stats">
       <div class="stat"><b>${sm.total_time != null ? Math.round(sm.total_time / 3600) + " h" : "–"}</b><span>Total time</span></div>
       <div class="stat"><b>${fmtArea(sm.total_area)}</b><span>Total area</span></div>
-      <div class="stat"><b>${sm.count ?? "–"}</b><span>Cleanings</span></div></div>`;
-    if (sm.last) {
+      <div class="stat"><b>${sm.count ?? "–"}</b><span>Cleanings</span></div></div>` : "";
+    if (sm?.last) {
       hist += `<dl class="kv"><dt>Last clean</dt><dd>${fmtWhen(sm.last.begin)}</dd><dt>Duration</dt><dd>${fmtDuration(sm.last.duration)}</dd><dt>Area</dt><dd>${fmtArea(sm.last.area)}</dd><dt>Finished</dt><dd>${sm.last.complete ? "Yes" : "No"}</dd></dl>`;
     }
-    cards.push(`<div class="card"><div class="card-head"><h3 class="card-title">${icon("history")}History</h3></div>${hist}</div>`);
+    if (!sm) hist = `<p class="muted">Robot history summary isn't available right now. Locally saved runs are shown below.</p>`;
+    cards.push(`<div class="card history-card" id="history-runs"><div class="card-head"><h3 class="card-title">${icon("history")}History</h3></div>${hist}
+      <div id="history-runs-list"><p class="muted">Loading run history…</p></div><div id="history-run-detail"></div></div>`);
   }
 
   if (notifySupported()) {
@@ -157,6 +326,7 @@ export function renderSettings(): void {
     </div></div>`);
 
   $("#settings").innerHTML = cards.join("");
+  renderRunHistory();
 
   const vol = $opt<HTMLInputElement>("#vol");
   if (vol) {

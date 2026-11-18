@@ -616,6 +616,10 @@ class DemoController:
         self._tick()
         return self.history.detail(run_id)
 
+    async def runs(self) -> list[dict[str, Any]]:
+        self._tick()
+        return self.history.list()
+
     async def settings(self) -> dict[str, Any]:
         await asyncio.sleep(0.25)
         limits = {

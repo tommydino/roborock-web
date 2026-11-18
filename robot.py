@@ -585,6 +585,9 @@ class DeviceController:
     async def run_detail(self, run_id: str) -> dict[str, Any] | None:
         return self.history.detail(run_id)
 
+    async def runs(self) -> list[dict[str, Any]]:
+        return self.history.list()
+
     async def _refresh_map(self) -> None:
         p = self._p
         raw = await p.map_content.rpc_channel.send_command(RoborockCommand.GET_MAP_V1)

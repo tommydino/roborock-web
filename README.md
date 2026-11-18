@@ -98,9 +98,8 @@ The phone app tells you what the robot is doing now. Freshness tells you what it
 
 - **The map** goes from pale (cleaned in the last day) to dark (over two weeks ago). Spots it never reached, in rooms it does clean, are darkest. That's usually under the bed, the sofa or a desk, or something left on the floor. Hover anywhere for the exact age, and when it was last mopped.
 - **The panel** next to the map lists every room with when it was cleaned and mopped. Set how often each room should be cleaned (every day to every two weeks). Rooms past that are marked **Due**, and **Clean due rooms** sends the robot to just those, with your current cleaning mode. Click a room to pick it for a clean.
-- **Recent runs** lists the rooms, duration, area and whether the robot mopped. Open a run for its map, route playback and the start/end details Roborock saved.
 
-The app records each run the robot finishes **while the app is running**, including its ordered route. It also fills in older runs from the robot's own list of recent cleans; some robots provide a route map for those, and some don't. A run without route data still shows its summary, but can't be replayed. Playback follows the saved route; Roborock doesn't provide timestamps for each point, so intermediate playback times are approximate. The saved record can include the start type, finish reason, obstacle avoidance count and mop wash count, but not a timestamp for every room change or wash. A run counts as cleaning a room once it covered half of its floor. History stays on your computer in `data/history-<robot>.json` and keeps the last 120 days.
+**Settings → History** lists recent runs with their duration, area and cleaning mode. Open a run for its map, route playback and the start/end details Roborock saved. The app records each run the robot finishes **while the app is running**, including its ordered route. It also fills in older runs from the robot's own list of recent cleans; some robots provide a route map for those, and some don't. A run without route data still shows its summary, but can't be replayed. Playback follows the saved route; Roborock doesn't provide timestamps for each point, so intermediate playback times are approximate. The saved record can include the start type, finish reason, obstacle avoidance count and mop wash count, but not a timestamp for every room change or wash. A run counts as cleaning a room once it covered half of its floor. History stays on your computer in `data/history-<robot>.json` and keeps the last 120 days.
 
 ## Editing the map
 
@@ -127,7 +126,7 @@ If a map has no-carpet zones made in the Roborock app, the editor warns you: the
 ## Privacy and security
 
 - Your Roborock session token is stored in `data/session.json` (readable only by you). **Sign out** in Settings, or delete the `data/` folder, to remove it.
-- Cleaning history (for Freshness) is kept in `data/history-<robot>.json`. It never leaves your computer.
+- Cleaning history is kept in `data/history-<robot>.json`. It never leaves your computer.
 - The last map is kept in `data/map-<robot>.json`, so the app can show it straight away after a restart (and while the robot is offline).
 - The app only talks to Roborock's servers and to your robot.
 - By default it only listens on `localhost`. With `--host 0.0.0.0`, **anyone on your network can control the robot**. There's no password, so only do this on a network you trust.
