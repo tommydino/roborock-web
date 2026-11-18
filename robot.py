@@ -704,18 +704,20 @@ class DeviceController:
             raise ValueError("Cleaning run not found")
         record_id = int(run_id)
         record = None
-        map_data = None
+        map_data_v2 = None
         command_errors = []
         for label, channel, command in (
             ("get_clean_record", self._p.clean_summary.rpc_channel, RoborockCommand.GET_CLEAN_RECORD),
-            ("get_clean_record_map", self._p.map_content.rpc_channel, RoborockCommand.GET_CLEAN_RECORD_MAP),
+            # Newer Roborock models advertise clean-history detail support and
+            # may serve historical maps through the v2 map endpoint instead.
+            ("get_clean_record_map_v2", self._p.map_content.rpc_channel, "get_clean_record_map_v2"),
         ):
             try:
                 result = await _send_history_command(channel, command, [record_id])
                 if label == "get_clean_record":
                     record = result
                 else:
-                    map_data = result
+                    map_data_v2 = result
             except Exception as err:  # keep the other raw reply if one command times out
                 command_errors.append({"command": label, "error": str(err) or type(err).__name__})
         features = self._p.device_features
@@ -729,7 +731,7 @@ class DeviceController:
             },
             "stored_run": self.history.detail(run_id),
             "raw_clean_record": record,
-            "record_map": _map_diagnostics(map_data),
+            "record_map_v2": _map_diagnostics(map_data_v2),
             "command_errors": command_errors,
             "note": (
                 "Raw map data is a private floorplan. Block IDs and timestamps are included "
@@ -1211,7 +1213,7 @@ def _launching_app() -> str:
     return names.get(os.environ.get("TERM_PROGRAM", ""), "the app you started it from")
 
 
-async def _send_history_command(channel: Any, method: RoborockCommand, params: list[Any]) -> Any:
+async def _send_history_command(channel: Any, method: RoborockCommand | str, params: list[Any]) -> Any:
     """Give large historical records more time than python-roborock's RPC default."""
     # python-roborock currently hardcodes a 10-second timeout inside its RPC
     # channel. An outer wait_for alone cannot extend that inner deadline, so
