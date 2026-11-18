@@ -149,6 +149,14 @@ def create_app(demo: bool) -> FastAPI:
             raise HTTPException(404, "Cleaning run not found")
         return detail
 
+    @app.get("/api/devices/{duid}/runs/{run_id}/diagnostics")
+    async def run_diagnostics(duid: str, run_id: str):
+        data = await (await ctrl(duid)).run_diagnostics(run_id)
+        return JSONResponse(
+            data,
+            headers={"Content-Disposition": f'attachment; filename="roborock-run-{run_id}-source.json"'},
+        )
+
     @app.delete("/api/devices/{duid}/runs/{run_id}", status_code=204)
     async def delete_run(duid: str, run_id: str):
         await (await ctrl(duid)).delete_run(run_id)

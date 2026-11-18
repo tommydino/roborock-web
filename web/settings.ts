@@ -134,6 +134,8 @@ function runDetailHtml(): string {
     <p class="run-disclaimer">${recordedEvents.length
       ? "Events were observed while this app was open. Room changes are sampled from map updates, so their times are approximate."
       : "This run has summary history only. Detailed dock and resume events are recorded for runs observed while this app is open."}</p>
+    ${run.source === "demo" ? "" : `<a class="btn-soft run-source-data" href="${esc(devicePath(`runs/${encodeURIComponent(run.id)}/diagnostics`))}">Download raw run data for timeline analysis</a>`}
+    <p class="run-disclaimer">The export includes the saved map and may reveal your home's floorplan. Share it only if you are comfortable with that.</p>
   </section>`;
 }
 

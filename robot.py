@@ -695,6 +695,41 @@ class DeviceController:
             await self._backfill(int(run_id))
         return self.history.detail(run_id)
 
+    async def run_diagnostics(self, run_id: str) -> dict[str, Any]:
+        """Export the unparsed Roborock replies needed to investigate run history."""
+        if not run_id.isdigit() or not self.history.has(run_id):
+            raise ValueError("Cleaning run not found")
+        record_id = int(run_id)
+        record = await asyncio.wait_for(
+            self._p.clean_summary.rpc_channel.send_command(
+                RoborockCommand.GET_CLEAN_RECORD, params=[record_id]
+            ),
+            20,
+        )
+        map_data = await asyncio.wait_for(
+            self._p.map_content.rpc_channel.send_command(
+                RoborockCommand.GET_CLEAN_RECORD_MAP, params=[record_id]
+            ),
+            20,
+        )
+        features = self._p.device_features
+        return {
+            "format": "roborock-history-diagnostics-v1",
+            "run_id": run_id,
+            "device": {
+                **self._identity(),
+                "firmware": getattr(self.device.device_info, "fv", None),
+                "features": dataclasses.asdict(features) if features else None,
+            },
+            "stored_run": self.history.detail(run_id),
+            "raw_clean_record": record,
+            "record_map": _map_diagnostics(map_data),
+            "note": (
+                "Raw map data is a private floorplan. Block IDs and timestamps are included "
+                "for protocol analysis; undocumented values are not assigned event labels."
+            ),
+        }
+
     async def runs(self) -> list[dict[str, Any]]:
         return self.history.list()
 
@@ -1167,6 +1202,46 @@ def _launching_app() -> str:
     """The app this was started from, as macOS lists it under Local Network."""
     names = {"iTerm.app": "iTerm", "Apple_Terminal": "Terminal", "vscode": "Visual Studio Code", "WarpTerminal": "Warp"}
     return names.get(os.environ.get("TERM_PROGRAM", ""), "the app you started it from")
+
+
+def _map_diagnostics(raw: Any) -> dict[str, Any]:
+    """Describe the saved-map blocks and retain the original bytes for analysis."""
+    if not isinstance(raw, bytes):
+        return {"available": False, "response": raw}
+
+    blocks: list[dict[str, Any]] = []
+    offset = 20 if len(raw) >= 20 and raw[:2] == b"rr" else 0
+    while offset + 12 <= len(raw):
+        block_type = int.from_bytes(raw[offset : offset + 2], "little")
+        header_length = int.from_bytes(raw[offset + 4 : offset + 6], "little")
+        payload_length = int.from_bytes(raw[offset + 8 : offset + 12], "little")
+        end = offset + header_length + payload_length
+        if header_length < 12 or end > len(raw):
+            break
+        block: dict[str, Any] = {
+            "type": block_type,
+            "header_length": header_length,
+            "payload_length": payload_length,
+        }
+        # Block 34 is called NONCEDATA by independent map parsers. Its entries
+        # are timestamps keyed by map-block type, not documented timeline labels.
+        if block_type == 34:
+            entries = []
+            for pos in range(offset + 12, end - 4, 5):
+                entries.append({
+                    "type": raw[pos],
+                    "unix_time": int.from_bytes(raw[pos + 1 : pos + 5], "little"),
+                })
+            block["timestamp_entries"] = entries
+        blocks.append(block)
+        offset = end
+
+    return {
+        "available": True,
+        "byte_length": len(raw),
+        "blocks": blocks,
+        "raw_base64": base64.b64encode(raw).decode("ascii"),
+    }
 
 
 def _plain(obj: Any, cls: type) -> Any:
