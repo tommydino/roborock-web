@@ -542,7 +542,8 @@ class DeviceController:
         return 120
 
     async def _backfill(self, rid: int) -> None:
-        record = await self._p.clean_summary.get_clean_record(rid)
+        previous = next((item for item in self.history.runs if item.id == str(rid)), None)
+        record = None if previous else await self._p.clean_summary.get_clean_record(rid)
         grid = None
         rendered = None
         # Map availability can vary between individual records. A missing map
@@ -555,7 +556,15 @@ class DeviceController:
             grid = grid_from_map(rendered) if rendered else None
         except Exception as err:  # noqa: BLE001
             _LOGGER.info("No map for past run %s from this robot: %s", rid, err or type(err).__name__)
-        run = _run(rid, record, grid, "robot", None, rendered=rendered)
+        if previous:
+            if not rendered:
+                return
+            run = dataclasses.replace(previous, grid=grid or previous.grid, route=route_from_map(rendered))
+        else:
+            if record is None:
+                _LOGGER.info("No clean record returned for run %s", rid)
+                return
+            run = _run(rid, record, grid, "robot", None, rendered=rendered)
         self.history.add(run, map_asset(rendered, self._room_names) if rendered and run.route else None)
 
     def _mode(self) -> str | None:
@@ -582,10 +591,10 @@ class DeviceController:
 
     async def run_detail(self, run_id: str) -> dict[str, Any] | None:
         run = next((item for item in self.history.runs if item.id == run_id), None)
-        if run and run.source == "robot" and not run.route and run_id.isdigit():
+        if run and not run.route and run_id.isdigit():
             # Retry on demand: the record map request can be temporarily
-            # unavailable during history sync, but should still be tried when
-            # the user opens that specific run.
+            # unavailable during history sync or the run may predate route
+            # recording. Try the robot's saved map when the user opens it.
             await self._backfill(int(run_id))
         return self.history.detail(run_id)
 

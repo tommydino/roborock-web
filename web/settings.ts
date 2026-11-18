@@ -15,6 +15,11 @@ let selectedRun: RunDetail | null = null;
 let runHistoryLoading = true;
 let routeProgress = 0;
 let routeTimer: number | null = null;
+let routeSpeed = 1;
+let mapZoom = 1;
+let mapPanX = 0;
+let mapPanY = 0;
+let mapDrag: { id: number; x: number; y: number; panX: number; panY: number } | null = null;
 
 export async function loadRunHistory(): Promise<void> {
   runHistoryLoading = true;
@@ -40,11 +45,19 @@ function routeSvg(run: RunDetail): string {
     ? `<g class="run-charger" transform="translate(${run.map.charger.x} ${run.map.charger.y})"><circle r="9"/><text y="3.5">⌂</text></g>`
     : "";
   return `<div class="run-map" style="aspect-ratio:${run.map.width}/${run.map.height}">
-    <img src="${run.map.base}" alt="Map for this cleaning run">
-    <svg viewBox="0 0 ${run.map.width} ${run.map.height}" aria-label="Cleaning route">
-      ${rooms}${charger}${lines(run.route.path, "clean", "clean")}${lines(run.route.mop_path, "mop", "mop")}
-      <g id="run-playhead" class="run-playhead" visibility="hidden"><circle r="7"/><circle class="run-playhead-dot" r="2.3"/></g>
-    </svg>
+    <div id="run-map-content" class="run-map-content">
+      <img src="${run.map.base}" alt="Map for this cleaning run">
+      <svg viewBox="0 0 ${run.map.width} ${run.map.height}" aria-label="Cleaning route">
+        ${rooms}${charger}${lines(run.route.path, "clean", "clean")}${lines(run.route.mop_path, "mop", "mop")}
+        <g id="run-playhead" class="run-playhead" visibility="hidden"><circle r="7"/><circle class="run-playhead-dot" r="2.3"/></g>
+      </svg>
+    </div>
+    <div class="run-map-tools" role="group" aria-label="Map zoom controls">
+      <button class="btn-soft" data-map-zoom-in aria-label="Zoom in" title="Zoom in">+</button>
+      <button class="btn-soft" data-map-zoom-out aria-label="Zoom out" title="Zoom out">−</button>
+      <button class="btn-soft" data-map-zoom-reset title="Reset zoom">Reset</button>
+      <span data-map-zoom-label>100%</span>
+    </div>
   </div>`;
 }
 
@@ -84,6 +97,9 @@ function runDetailHtml(): string {
     ${run.route && run.map ? `${routeSvg(run)}
       <div class="replay-controls">
         <button class="btn-soft" data-run-play aria-label="Play route">${icon("play")}<span>Play route</span></button>
+        <div class="replay-speeds" role="group" aria-label="Replay speed">
+          ${[1, 3, 5].map((speed) => `<button class="btn-soft replay-speed${routeSpeed === speed ? " is-active" : ""}" data-run-speed="${speed}" aria-pressed="${routeSpeed === speed}">${speed}×</button>`).join("")}
+        </div>
         <label class="visually-hidden" for="run-progress">Route progress</label>
         <input id="run-progress" type="range" min="0" max="1000" value="${routeProgress}">
         <span id="run-progress-label">${fmtDuration(0)} / ${fmtDuration(duration)}</span>
@@ -137,6 +153,34 @@ function syncRouteProgress(): void {
   }
 }
 
+function applyMapView(): void {
+  const map = settingsRoot.querySelector<HTMLElement>(".run-map");
+  const content = map?.querySelector<HTMLElement>("#run-map-content");
+  if (!map || !content) return;
+  const maxX = (map.clientWidth * (mapZoom - 1)) / 2;
+  const maxY = (map.clientHeight * (mapZoom - 1)) / 2;
+  mapPanX = Math.max(-maxX, Math.min(maxX, mapPanX));
+  mapPanY = Math.max(-maxY, Math.min(maxY, mapPanY));
+  content.style.transform = `translate(${mapPanX}px, ${mapPanY}px) scale(${mapZoom})`;
+  map.classList.toggle("is-zoomed", mapZoom > 1);
+  const label = map.querySelector<HTMLElement>("[data-map-zoom-label]");
+  if (label) label.textContent = `${Math.round(mapZoom * 100)}%`;
+}
+
+function zoomMap(direction: 1 | -1): void {
+  mapZoom = Math.max(1, Math.min(5, mapZoom * (direction > 0 ? 1.25 : 0.8)));
+  if (mapZoom === 1) { mapPanX = 0; mapPanY = 0; }
+  applyMapView();
+}
+
+function syncSpeedButtons(): void {
+  settingsRoot.querySelectorAll<HTMLButtonElement>("[data-run-speed]").forEach((button) => {
+    const active = Number(button.dataset.runSpeed) === routeSpeed;
+    button.classList.toggle("is-active", active);
+    button.setAttribute("aria-pressed", String(active));
+  });
+}
+
 function renderRunHistory(): void {
   const list = $opt<HTMLElement>("#history-runs-list");
   const detail = $opt<HTMLElement>("#history-run-detail");
@@ -146,11 +190,13 @@ function renderRunHistory(): void {
       const mode = run.mode?.replaceAll("_", " ");
       return `<li><button class="run-open" data-run="${esc(run.id)}"><span class="run-when">${esc(fmtWhen(run.begin))}</span>
         <span class="run-what">${fmtDuration(run.duration)} · ${fmtArea(run.area)}${mode ? ` · ${esc(mode)}` : ""}${run.mopped ? " · mopped" : ""}</span>
-        <span class="run-route-note">${run.mapped ? "Route available · open replay" : run.source === "robot" ? "Open to load route map" : "Summary only"}</span></button></li>`;
+        <span class="run-route-note">${run.mapped ? "Route available · open replay" : run.source !== "demo" ? "Open to load route map" : "Summary only"}</span></button></li>`;
     }).join("")}</ul>`
     : `<p class="muted">${runHistoryLoading ? "Loading run history…" : "No recent runs available."}</p>`;
   detail.innerHTML = runDetailHtml();
   syncRouteProgress();
+  syncSpeedButtons();
+  applyMapView();
 }
 
 async function openHistoryRun(id: string): Promise<void> {
@@ -160,6 +206,10 @@ async function openHistoryRun(id: string): Promise<void> {
   selectedRun = null;
   runHistoryLoading = true;
   routeProgress = 0;
+  routeSpeed = 1;
+  mapZoom = 1;
+  mapPanX = 0;
+  mapPanY = 0;
   renderRunHistory();
   try {
     selectedRun = await api<RunDetail>(devicePath(`runs/${encodeURIComponent(id)}`));
@@ -168,6 +218,11 @@ async function openHistoryRun(id: string): Promise<void> {
     selectedRunId = null;
   } finally {
     runHistoryLoading = false;
+    if (selectedRun) {
+      runHistory = runHistory.map((run) => run.id === id
+        ? { ...run, mapped: Boolean(selectedRun?.route && selectedRun?.map) }
+        : run);
+    }
     renderRunHistory();
   }
 }
@@ -183,6 +238,17 @@ settingsRoot.addEventListener("click", async (e) => {
     renderRunHistory();
     return;
   }
+  const speed = closest<HTMLButtonElement>(e.target, "[data-run-speed]");
+  if (speed) {
+    routeSpeed = Number(speed.dataset.runSpeed) || 1;
+    syncSpeedButtons();
+    return;
+  }
+  if (closest(e.target, "[data-map-zoom-in]")) { zoomMap(1); return; }
+  if (closest(e.target, "[data-map-zoom-out]")) { zoomMap(-1); return; }
+  if (closest(e.target, "[data-map-zoom-reset]")) {
+    mapZoom = 1; mapPanX = 0; mapPanY = 0; applyMapView(); return;
+  }
   const run = closest<HTMLButtonElement>(e.target, "[data-run]");
   if (run) { await openHistoryRun(run.dataset.run ?? ""); return; }
   const play = closest<HTMLButtonElement>(e.target, "[data-run-play]");
@@ -191,15 +257,17 @@ settingsRoot.addEventListener("click", async (e) => {
     window.clearInterval(routeTimer);
     routeTimer = null;
     play.querySelector("span")!.textContent = "Play route";
+    play.setAttribute("aria-label", "Play route");
     return;
   }
   if (routeProgress >= 1000) routeProgress = 0;
   play.querySelector("span")!.textContent = "Pause";
+  play.setAttribute("aria-label", "Pause replay");
   const range = settingsRoot.querySelector<HTMLInputElement>("#run-progress");
   if (range) range.value = String(routeProgress);
   syncRouteProgress();
   routeTimer = window.setInterval(() => {
-    routeProgress = Math.min(1000, routeProgress + 5);
+    routeProgress = Math.min(1000, routeProgress + (50 * routeSpeed * 1000) / 60_000);
     const slider = settingsRoot.querySelector<HTMLInputElement>("#run-progress");
     if (slider) slider.value = String(routeProgress);
     syncRouteProgress();
@@ -208,9 +276,42 @@ settingsRoot.addEventListener("click", async (e) => {
       routeTimer = null;
       const label = settingsRoot.querySelector<HTMLElement>("[data-run-play] span");
       if (label) label.textContent = "Play route";
+      settingsRoot.querySelector<HTMLButtonElement>("[data-run-play]")?.setAttribute("aria-label", "Play route");
     }
-  }, 60);
+  }, 50);
 });
+
+settingsRoot.addEventListener("pointerdown", (e) => {
+  if (mapZoom <= 1 || closest(e.target, ".run-map-tools")) return;
+  const map = closest<HTMLElement>(e.target, ".run-map");
+  if (!map) return;
+  mapDrag = { id: e.pointerId, x: e.clientX, y: e.clientY, panX: mapPanX, panY: mapPanY };
+  map.setPointerCapture(e.pointerId);
+  map.classList.add("is-panning");
+});
+
+settingsRoot.addEventListener("pointermove", (e) => {
+  if (!mapDrag || mapDrag.id !== e.pointerId) return;
+  mapPanX = mapDrag.panX + e.clientX - mapDrag.x;
+  mapPanY = mapDrag.panY + e.clientY - mapDrag.y;
+  applyMapView();
+});
+
+function stopMapDrag(e: PointerEvent): void {
+  if (!mapDrag || mapDrag.id !== e.pointerId) return;
+  settingsRoot.querySelector(".run-map")?.classList.remove("is-panning");
+  mapDrag = null;
+}
+
+settingsRoot.addEventListener("pointerup", stopMapDrag);
+settingsRoot.addEventListener("pointercancel", stopMapDrag);
+
+settingsRoot.addEventListener("wheel", (e) => {
+  if (!closest(e.target, ".run-map")) return;
+  if ((e.deltaY > 0 && mapZoom <= 1) || (e.deltaY < 0 && mapZoom >= 5)) return;
+  e.preventDefault();
+  zoomMap(e.deltaY < 0 ? 1 : -1);
+}, { passive: false });
 
 settingsRoot.addEventListener("input", (e) => {
   const range = closest<HTMLInputElement>(e.target, "#run-progress");
