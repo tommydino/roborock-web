@@ -92,6 +92,35 @@ function routeMetrics(lines: number[][][]): { length: number; segments: Array<{ 
   return { length, segments };
 }
 
+function dockWaypoints(run: RunDetail): string {
+  const dock = run.map?.charger;
+  if (!dock || !run.route) return "";
+  const route = routeMetrics(run.route.path);
+  const stops: Array<{ distance: number; label: string }> = [];
+  // Coordinates use four image pixels per 5 cm. Separate the arrival
+  // and departure radii so small position changes near the dock stay quiet.
+  let near: boolean | undefined;
+  let previous: number[] | undefined;
+  for (const segment of route.segments) {
+    if (previous !== segment.a) {
+      const start = Math.hypot(segment.a[0] - dock.x, segment.a[1] - dock.y);
+      near = start <= 32 ? true : start >= 80 ? false : undefined;
+    }
+    previous = segment.b;
+    const distance = Math.hypot(segment.b[0] - dock.x, segment.b[1] - dock.y);
+    const next: boolean | undefined = distance <= 32 ? true : distance >= 80 ? false : near;
+    if (near !== undefined && next !== near) {
+      stops.push({ distance: segment.from + segment.length, label: next ? "Passed near the dock" : "Left the dock area" });
+    }
+    near = next;
+  }
+  if (!stops.length) return "";
+  return `<details open><summary>Dock area on the recorded route</summary><ol>${stops.map((stop) => {
+    const progress = Math.round(stop.distance / route.length * 1000);
+    return `<li><button class="btn-soft" data-waypoint="${progress}" aria-label="Show position at ${Math.round(progress / 10)}% of route">${Math.round(progress / 10)}%</button><span>${stop.label}</span></li>`;
+  }).join("")}</ol></details>`;
+}
+
 function runDetailHtml(): string {
   if (!selectedRunId) return "";
   if (!selectedRun) return `<section class="run-detail"><div class="history-head"><b>Cleaning run</b><button class="btn-soft" data-run-close>Close</button></div><p class="muted">Loading run details…</p></section>`;
@@ -103,9 +132,9 @@ function runDetailHtml(): string {
   const startType = run.start_type?.replaceAll("_", " ") ?? null;
   const finishReason = run.finish_reason?.replaceAll("_", " ") ?? null;
   const recordedEvents = run.events ?? [];
-  const timeline = [
+  const timeline: Array<{ at: number; label: string; detail?: string }> = [
     { at: run.begin, label: `Cleaning started${startType ? ` · ${startType}` : ""}` },
-    ...recordedEvents.map((event) => ({ at: event.at, label: event.label })),
+    ...recordedEvents,
     { at: run.end, label: `${result}${finishReason ? ` · ${finishReason}` : ""}` },
   ].sort((a, b) => a.at - b.at);
   const stats = [fmtDuration(duration), fmtArea(run.area), mode,
@@ -130,10 +159,10 @@ function runDetailHtml(): string {
       <p class="run-disclaimer">The robot follows its saved route once. Mop coverage appears along that route. Roborock doesn't provide timestamps for individual path points, so replay timing is approximate.</p>`
       : `<div class="run-no-route">${fetchingHistoryMap ? 'Loading the map for this run…' : 'No saved route available for this run.'}</div>`}
     <div class="run-timeline"><b>Run timeline</b><ol>
-      ${timeline.map((event) => `<li><time>${clock(event.at)}</time><span>${esc(event.label)}</span></li>`).join("")}
+      ${timeline.map((event) => `<li><time>${clock(event.at)}</time><span>${esc(event.label)}${event.detail ? `<br><small>${esc(event.detail)}</small>` : ""}</span></li>`).join("")}
       ${run.wash_count != null && !recordedEvents.some((event) => event.label === "Washing mop") ? `<li class="run-timeline-note"><time>—</time><span>Mop washed ${run.wash_count} times · individual times unavailable</span></li>` : ""}
       ${run.dust_collected && !recordedEvents.some((event) => event.label === "Emptying dustbin") ? '<li class="run-timeline-note"><time>—</time><span>Dustbin emptied · time unavailable</span></li>' : ""}
-    </ol><p>Elapsed ${fmtDuration(run.end - run.begin)} · Cleaning ${fmtDuration(duration)}</p></div>
+    </ol>${dockWaypoints(run)}<p>Elapsed ${fmtDuration(run.end - run.begin)} · Cleaning ${fmtDuration(duration)}</p></div>
     <p class="run-disclaimer">${recordedEvents.length
       ? "Events were observed while this app was open. Room changes are sampled from map updates, so their times are approximate."
       : "This run has summary history only. Detailed dock and resume events are recorded for runs observed while this app is open."}</p>
@@ -315,6 +344,14 @@ async function openHistoryRun(id: string): Promise<void> {
 
 const settingsRoot = $("#settings");
 settingsRoot.addEventListener("click", async (e) => {
+  const waypoint = closest<HTMLButtonElement>(e.target, "[data-waypoint]");
+  if (waypoint) {
+    routeProgress = Number(waypoint.dataset.waypoint);
+    const slider = settingsRoot.querySelector<HTMLInputElement>("#run-progress");
+    if (slider) slider.value = String(routeProgress);
+    syncRouteProgress();
+    return;
+  }
   const close = closest(e.target, "[data-run-close]");
   if (close) {
     if (routeTimer != null) window.clearInterval(routeTimer);
