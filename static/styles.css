@@ -703,3 +703,26 @@ svg.i.tiny { width: 12px; height: 12px; }
 .history-diff ul { margin: 6px 0 0; padding-left: 20px; }
 
 .app-setting-select { width: 100%; max-width: 280px; margin: 12px 0 0 44px; }
+
+.rr-timeline { border:1px solid var(--line); border-radius:16px; overflow:hidden; color:var(--text); }
+.rr-timeline summary { padding:16px; cursor:pointer; list-style:none; }
+.rr-timeline summary::-webkit-details-marker { display:none; }
+.rr-done { display:inline-grid; place-items:center; width:1.35em; height:1.35em; margin-right:7px; border-radius:50%; background:#228947; color:white; }
+.rr-disclosure { float:right; color:var(--muted); }
+.rr-disclosure::after { content:"Details ⌄"; }
+.rr-timeline[open] .rr-disclosure::after { content:"Hide ⌃"; }
+.rr-timeline summary small,.rr-timeline footer small { display:block; color:var(--muted); margin-top:4px; }
+.rr-timeline ol { margin:0; padding:14px 12px 4px; list-style:none; border-top:1px solid var(--line); }
+.rr-step { display:grid; grid-template-columns:max-content 20px minmax(0,1fr); column-gap:8px; position:relative; }
+.rr-clock { width:6ch; text-align:right; }
+.rr-step time { color:var(--muted); font-size:.82em; }
+.rr-step i { position:relative; z-index:1; justify-self:center; margin-top:4px; border:2px solid #1878d2; width:10px; height:10px; border-radius:50%; background:var(--card,Canvas); }
+.rr-major i { margin-top:0; width:20px; height:20px; line-height:16px; text-align:center; background:#1878d2; color:white; font-style:normal; }
+.rr-step:not(:last-child)::before { content:""; position:absolute; left:calc(6ch + 17px); top:10px; bottom:-6px; width:2px; background:#1878d2; }
+.rr-event { padding-bottom:18px; }
+.rr-event time { display:block; margin-top:3px; }
+.rr-major .rr-event > span { font-weight:700; }
+.rr-detail { color:var(--muted); margin:4px 0; font-size:.9em; }
+.rr-major .rr-detail { background:var(--soft,rgba(128,128,128,.1)); padding:10px 13px; border-radius:12px; }
+.rr-timeline footer small { font-size:.68rem; }
+.rr-timeline footer { font-size:1.3rem; display:flex; justify-content:space-evenly; padding:12px; text-align:center; border-top:1px solid var(--line); }

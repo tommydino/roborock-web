@@ -1,5 +1,7 @@
 // The Settings tab.
 
+import { parseTranscript, validTimelineLine } from "./app-timeline";
+import type { AppTimeline } from "./app-timeline";
 import { api, devicePath } from "./api";
 import { $, $opt, closest, errorMessage, esc, fmtArea, fmtDuration, fmtWhen, human, icon, toast } from "./dom";
 import { OPT_LABEL } from "./labels";
@@ -115,7 +117,7 @@ function dockWaypoints(run: RunDetail): string {
     near = next;
   }
   if (!stops.length) return "";
-  return `<details open><summary>Dock area on the recorded route</summary><ol>${stops.map((stop) => {
+  return `<details><summary>Dock area on the recorded route</summary><ol>${stops.map((stop) => {
     const progress = Math.round(stop.distance / route.length * 1000);
     return `<li><button class="btn-soft" data-waypoint="${progress}" aria-label="Show position at ${Math.round(progress / 10)}% of route">${Math.round(progress / 10)}%</button><span>${stop.label}</span></li>`;
   }).join("")}</ol></details>`;
@@ -125,9 +127,25 @@ function appTimelineKey(id: string): string {
   return `roborock:app-timeline:${S.duid}:${id}`;
 }
 
-function readAppTimeline(id: string): string {
-  try { return localStorage.getItem(appTimelineKey(id)) ?? ""; }
-  catch { return ""; }
+function readAppTimeline(id: string): { text: string; transcript?: AppTimeline } {
+  try {
+    const saved = localStorage.getItem(appTimelineKey(id)) ?? "";
+    if (!saved.startsWith("{")) return { text: saved };
+    const transcript = parseTranscript(saved, id);
+    return { text: transcript.events.join("\n"), transcript };
+  } catch { return { text: "" }; }
+}
+
+function timelineRow(time: string, label: string, details: string[], major: boolean): string {
+  const clock = `<time>${esc(time)}</time>`;
+  return `<li class="rr-step ${major ? "rr-major" : "rr-minor"}">
+    <div class="rr-clock">${major ? clock : ""}</div><i aria-hidden="true">${major ? "✓" : ""}</i>
+    <div class="rr-event"><span>${esc(label)}</span>${details.length ? `<div class="rr-detail">${details.map(d => `<div>${esc(d)}</div>`).join("")}</div>` : ""}${major ? "" : clock}</div>
+  </li>`;
+}
+
+function isMilestone(label: string): boolean {
+  return /^(Start |Clean |Cleaning Finished$|Automatic Re-Mopping$)/i.test(label);
 }
 
 function appTimelineRows(value: string): string {
@@ -135,7 +153,8 @@ function appTimelineRows(value: string): string {
     const match = /^(\d\d:\d\d)\s+(.+)$/.exec(line);
     if (!match) return "";
     const [label, ...details] = match[2].split(" | ");
-    return `<li><time>${esc(match[1])}</time><span><b>${esc(label)}</b>${details.map((detail) => `<br><small>${esc(detail)}</small>`).join("")}</span></li>`;
+    const major = isMilestone(label);
+    return timelineRow(match[1], label, major || !details.length ? details : [details.join(" | ")], major);
   }).join("");
 }
 
@@ -148,15 +167,27 @@ function runDetailHtml(): string {
   const result = run.complete === true ? "Completed" : run.complete === false ? "Stopped before completion" : "Result not reported";
   const mode = run.mode?.replaceAll("_", " ") ?? null;
   const startType = run.start_type?.replaceAll("_", " ") ?? null;
-  const finishReason = run.finish_reason?.replaceAll("_", " ") ?? null;
-  const appTimeline = readAppTimeline(run.id);
+  const names: Record<string, string> = {
+    "Washing mop": "Wash Mop", "Emptying dustbin": "Auto Emptying",
+    "Resuming cleaning": "Resume", "Detaching mop mounts": "Detaching mop cloth mounts",
+    "Installing mop mounts": "Installing mop cloth mounts",
+  };
+  const { text: appTimeline, transcript } = readAppTimeline(run.id);
+  const extra = run.record_details;
+  const area = transcript ? `${transcript.area_m2} m²` :
+    extra?.cleaned_area != null ? `${Math.round(extra.cleaned_area)} m²` : fmtArea(run.area);
+  const subtitle = transcript?.summary ?? [
+    startType ? human(startType) : null, extra?.rooms ? "Rooms" : null, mode,
+    run.dust_collected ? "Dust collected" : null,
+    run.wash_count != null ? `Mop wash × ${run.wash_count}` : null,
+  ].filter(Boolean).join(" · ");
   const recordedEvents = run.events ?? [];
   const timeline: Array<{ at: number; label: string; detail?: string }> = [
-    { at: run.begin, label: `Cleaning started${startType ? ` · ${startType}` : ""}` },
+    { at: run.begin, label: extra?.rooms ? "Start selective room cleaning" : "Start cleaning" },
     ...recordedEvents,
-    { at: run.end, label: `${result}${finishReason ? ` · ${finishReason}` : ""}` },
+    { at: run.end, label: run.complete === true ? "Cleaning Finished" : result, detail: run.finish_reason?.replaceAll("_", " ") },
   ].sort((a, b) => a.at - b.at);
-  const stats = [fmtDuration(duration), fmtArea(run.area), mode,
+  const stats = [fmtDuration(duration), area, mode,
     run.wash_count != null ? `${run.wash_count} mop washes` : null,
     run.dust_collected ? "Dust collected" : null,
     run.avoid_count != null ? `${run.avoid_count} avoidance events` : null]
@@ -177,15 +208,20 @@ function runDetailHtml(): string {
       </div>
       <p class="run-disclaimer">The robot follows its saved route once. Mop coverage appears along that route. Roborock doesn't provide timestamps for individual path points, so replay timing is approximate.</p>`
       : `<div class="run-no-route">${fetchingHistoryMap ? 'Loading the map for this run…' : 'No saved route available for this run.'}</div>`}
-    ${appTimeline ? `<div class="run-timeline"><b>Roborock app timeline</b><ol>${appTimelineRows(appTimeline)}</ol></div>` : `<div class="run-timeline"><b>Run timeline</b><ol>
-      ${timeline.map((event) => `<li><time>${clock(event.at)}</time><span>${esc(event.label)}${event.detail ? `<br><small>${esc(event.detail)}</small>` : ""}</span></li>`).join("")}
-      ${run.wash_count != null && !recordedEvents.some((event) => event.label === "Washing mop") ? `<li class="run-timeline-note"><time>—</time><span>Mop washed ${run.wash_count} times · individual times unavailable</span></li>` : ""}
-      ${run.dust_collected && !recordedEvents.some((event) => event.label === "Emptying dustbin") ? '<li class="run-timeline-note"><time>—</time><span>Dustbin emptied · time unavailable</span></li>' : ""}
-    </ol>${dockWaypoints(run)}<p>Elapsed ${fmtDuration(run.end - run.begin)} · Cleaning ${fmtDuration(duration)}</p></div>
-    <p class="run-disclaimer">${recordedEvents.length
-      ? "Events were observed while this app was open. Room changes are sampled from map updates, so their times are approximate."
-      : "This run has summary history only. Detailed dock and resume events are recorded for runs observed while this app is open."}</p>`}
-    <details><summary>Edit app timeline</summary><label>One event per line: HH:MM Event | Detail<br><textarea data-app-timeline rows="8" style="width:100%" maxlength="20000">${esc(appTimeline)}</textarea></label><button class="btn-soft" data-save-timeline>Save for this run</button></details>
+    <details class="rr-timeline" open>
+      <summary><strong>${run.complete === true ? '<span class="rr-done" aria-hidden="true">✓</span>Finished cleaning' : esc(result)}</strong><span class="rr-disclosure" aria-hidden="true"></span>
+      <small>${esc(subtitle)}</small></summary>
+      <ol>${appTimeline ? appTimelineRows(appTimeline) : timeline.map(event => {
+        const room = event.label.startsWith("Cleaning ") && event.detail !== undefined && event.label !== "Cleaning Finished" && event.label !== "Cleaning paused";
+        const label = room ? "Clean " + event.label.slice(9) : names[event.label] ?? event.label;
+        return timelineRow(clock(event.at), label, event.detail ? event.detail.split(" · ") : [], room || isMilestone(label));
+      }).join("")}</ol>
+      <footer><span>${fmtDuration(duration)}<small>Cleaning Time</small></span><span>${area}<small>Cleaning Area</small></span></footer>
+    </details>
+    <p class="run-disclaimer">${appTimeline ? "Transcribed from the Roborock app." : recordedEvents.length ? "Times show when Roborock Web observed each change." : "Only the start and finish times are available for this run."}</p>
+    ${!appTimeline && extra?.dirty_replenish ? `<p class="run-disclaimer">Re-cleaned area reported for this run: ${fmtArea(extra.dirty_replenish)} · time unavailable</p>` : ""}
+    ${dockWaypoints(run)}
+    <details><summary>Edit app timeline</summary><label>One event per line: HH:MM Event | Detail<br><textarea data-app-timeline rows="8" style="width:100%" maxlength="20000">${esc(appTimeline)}</textarea></label><button class="btn-soft" data-save-timeline>Save for this run</button><label>Import a transcript for this run <input type="file" accept=".json,application/json" data-import-timeline></label><small>Saved in this browser.</small></details>
     ${run.source === "demo" ? "" : `<a class="btn-soft run-source-data" href="${esc(devicePath(`runs/${encodeURIComponent(run.id)}/diagnostics`))}">Download raw run data for timeline analysis</a>`}
     <p class="run-disclaimer">The export includes the saved map and may reveal your home's floorplan. Share it only if you are comfortable with that.</p>
   </section>`;
@@ -336,8 +372,9 @@ async function openHistoryRun(id: string): Promise<void> {
     const cached = await api<RunDetail>(path + "?cached=true");
     if (!current()) return;
     selectedRun = cached;
-    if ((!cached.route || !cached.map) && cached.source !== "demo") {
-      fetchingHistoryMap = true;
+    const needsMap = !cached.route || !cached.map;
+    if ((needsMap || cached.record_details == null) && cached.source !== "demo") {
+      fetchingHistoryMap = needsMap;
       renderRunHistory();
       const refreshed = await api<RunDetail>(path);
       if (!current()) return;
@@ -363,16 +400,36 @@ async function openHistoryRun(id: string): Promise<void> {
 }
 
 const settingsRoot = $("#settings");
+settingsRoot.addEventListener("change", async (event) => {
+  const input = event.target;
+  if (!(input instanceof HTMLInputElement) || !input.matches("[data-import-timeline]") || !selectedRun) return;
+  const file = input.files?.[0];
+  if (!file) return;
+  const runId = selectedRun.id;
+  const key = appTimelineKey(runId);
+  try {
+    if (file.size > 150000) throw new Error("This timeline file is too large.");
+    const transcript = parseTranscript(await file.text(), runId);
+    if (selectedRun?.id !== runId || key !== appTimelineKey(runId)) return;
+    localStorage.setItem(key, JSON.stringify(transcript));
+    renderRunHistory();
+    toast("App timeline imported.");
+  } catch (error) {
+    toast(errorMessage(error), true);
+    input.value = "";
+  }
+});
 settingsRoot.addEventListener("click", async (e) => {
   if (closest(e.target, "[data-save-timeline]") && selectedRun) {
     const value = settingsRoot.querySelector<HTMLTextAreaElement>("[data-app-timeline]")?.value.trim() ?? "";
-    if (value && value.split("\n").some((line) => !/^([01]\d|2[0-3]):[0-5]\d\s+\S/.test(line))) {
+    if (value && value.split("\n").some((line) => !validTimelineLine(line))) {
       toast("Start each event with HH:MM and its name.", true);
       return;
     }
     try {
       const key = appTimelineKey(selectedRun.id);
-      if (value) localStorage.setItem(key, value);
+      const { transcript } = readAppTimeline(selectedRun.id);
+      if (value) localStorage.setItem(key, transcript ? JSON.stringify({ ...transcript, events: value.split("\n") }) : value);
       else localStorage.removeItem(key);
     } catch { toast("Could not save this timeline in the browser.", true); return; }
     renderRunHistory();

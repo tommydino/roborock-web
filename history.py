@@ -65,6 +65,7 @@ class Run:
     avoid_count: int | None = None
     wash_count: int | None = None
     dust_collected: bool | None = None
+    record_details: dict[str, Any] | None = None  # extra fields from the raw historical record
     events: list[dict[str, Any]] | None = None  # live status transitions observed by this app
 
 
@@ -176,6 +177,9 @@ class History:
         return True
 
     def add(self, run: Run, map_asset: dict[str, Any] | None = None) -> None:
+        previous = next((r for r in self.runs if r.id == run.id), None)
+        if previous and run.record_details is None:
+            run.record_details = previous.record_details
         cutoff = time.time() - KEEP_DAYS * 86400
         runs = [r for r in self.runs if r.id != run.id and r.end >= cutoff]
         if run.end >= cutoff:
@@ -199,6 +203,7 @@ class History:
             "start_type": run.start_type, "finish_reason": run.finish_reason,
             "avoid_count": run.avoid_count, "wash_count": run.wash_count,
             "dust_collected": run.dust_collected,
+            "record_details": run.record_details,
             "events": run.events or [],
             "route": route, "map": asset,
         }
@@ -209,7 +214,7 @@ class History:
             route = run.route
             result.append({
                 "id": run.id, "begin": run.begin, "end": run.end, "duration": run.duration,
-                "area": run.area, "complete": run.complete, "source": run.source,
+                "area": (run.record_details or {}).get("cleaned_area", run.area), "complete": run.complete, "source": run.source,
                 "mapped": bool(route and self.maps.get(str(route.get("map")))),
                 "mopped": bool((route and route.get("mop_path")) or (run.grid and run.grid.mop)),
                 "rooms": [], "mode": run.mode,

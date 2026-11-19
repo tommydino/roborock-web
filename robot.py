@@ -230,7 +230,7 @@ class DeviceController:
         self._pending_run_events: list[dict[str, Any]] = []
         self._pending_run_end: int | None = None
         self._run_last_state: str | None = None
-        self._run_last_room: int | None = None
+        self._run_last_room: tuple[int, str | None] | None = None
         self._run_map_at = 0.0
         self._history_at = 0.0
         self._record_maps_loaded: set[str] = set()
@@ -662,12 +662,22 @@ class DeviceController:
         if room is None or room <= 0:
             self._run_last_room = None
             return
-        if room == self._run_last_room:
+        state = status.get("state")
+        if state in {"robot_status_mopping", "segment_mopping", "zoned_mopping", "clean_mop_mopping",
+                     "segment_clean_mop_mopping", "zoned_clean_mop_mopping"}:
+            cleaning_pass = "Mop"
+        elif state in {"clean_mop_cleaning", "segment_clean_mop_cleaning", "zoned_clean_mop_cleaning"}:
+            cleaning_pass = "Vacuum"
+        elif state in {"cleaning", "spot_cleaning", "zoned_cleaning", "segment_cleaning"}:
+            cleaning_pass = None
+        else:
+            return
+        if (room, cleaning_pass) == self._run_last_room:
             return
         names = {**self._room_names, **self._nicknames.get(self.device.duid)}
         name = names.get(room) or f"Room {room}"
         mode = status.get("mode") or {}
-        settings = []
+        settings = [cleaning_pass] if cleaning_pass else []
         for key, title in (("fan", "Suction"), ("water", "Water"), ("mop", "Mop route")):
             value = next((option["name"] for option in mode.get(f"{key}_options", [])
                           if option["code"] == mode.get(key)), None)
@@ -676,7 +686,7 @@ class DeviceController:
         self._run_events.append({
             "at": int(time.time()), "label": f"Cleaning {name}", "detail": " · ".join(settings)
         })
-        self._run_last_room = room
+        self._run_last_room = (room, cleaning_pass)
 
     def _record_preparation(self, start: int) -> None:
         while self._prep_events:
@@ -787,15 +797,37 @@ class DeviceController:
 
     async def run_detail(self, run_id: str) -> dict[str, Any] | None:
         run = next((item for item in self.history.runs if item.id == run_id), None)
-        if (
-            run and run_id.isdigit() and (not run.route or run.source == "live")
-            and run_id not in self._record_maps_loaded
-        ):
-            # A live map is only a snapshot of the last visible route. Fetch the
-            # run-specific historical map before replaying it so later map
-            # updates cannot silently substitute a different route.
-            await self._backfill(int(run_id))
+        if run and run_id.isdigit():
+            requests = []
+            if (not run.route or run.source == "live") and run_id not in self._record_maps_loaded:
+                requests.append(self._backfill(int(run_id)))
+            if run.record_details is None:
+                requests.append(self._load_record_details(run_id))
+            await asyncio.gather(*requests)
         return self.history.detail(run_id)
+
+    async def _load_record_details(self, run_id: str) -> None:
+        try:
+            raw = await self._p.clean_summary.rpc_channel.send_command(
+                RoborockCommand.GET_CLEAN_RECORD, params=[int(run_id)]
+            )
+        except Exception as err:
+            _LOGGER.info("Additional details unavailable for run %s: %s", run_id, err)
+            return
+        # Older models can return positional records, or several sub-records.
+        # Only apply single-session totals when the robot identifies this run.
+        record = raw[0] if isinstance(raw, list) and len(raw) == 1 else raw
+        details = {}
+        if isinstance(record, dict) and record.get("begin") == int(run_id):
+            for key in ("cleaned_area", "dirty_replenish"):
+                value = record.get(key)
+                if type(value) is int and value >= 0:
+                    details[key] = value / 1_000_000
+            if record.get("clean_type") == 3:
+                details["rooms"] = True
+        current = next((item for item in self.history.runs if item.id == run_id), None)
+        if current is not None:
+            self.history.add(dataclasses.replace(current, record_details=details))
 
     async def run_diagnostics(self, run_id: str) -> dict[str, Any]:
         """Export the unparsed Roborock replies needed to investigate run history."""
