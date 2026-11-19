@@ -1,0 +1,10 @@
+**
+!Dockerfile
+!package*.json
+!requirements.txt
+!*.py
+!web/
+!web/**
+!static/
+!static/**
+static/dist/

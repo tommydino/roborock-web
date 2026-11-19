@@ -1,0 +1,11 @@
+services:
+  roborock-web:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "${ROBOROCK_BIND_IP:-127.0.0.1}:8765:8765"
+    volumes:
+      - roborock-data:/data
+volumes:
+  roborock-data:
+    name: roborock-web-data
