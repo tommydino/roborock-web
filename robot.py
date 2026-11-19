@@ -229,6 +229,7 @@ class DeviceController:
         self._run_last_room: int | None = None
         self._run_map_at = 0.0
         self._history_at = 0.0
+        self._record_maps_loaded: set[str] = set()
         self._to_backfill: list[int] = []  # older runs from the robot's list, still to fetch
         self._p = device.v1_properties
         self._renderer = MapRenderer()
@@ -649,8 +650,11 @@ class DeviceController:
         # Map availability can vary between individual records. A missing map
         # for one run must not disable map requests for every later run.
         try:
-            raw = await asyncio.wait_for(
-                self._p.map_content.rpc_channel.send_command(RoborockCommand.GET_CLEAN_RECORD_MAP, params=[rid]), 20
+            raw = await _send_history_command(
+                self._p.map_content.rpc_channel,
+                RoborockCommand.GET_CLEAN_RECORD_MAP,
+                [rid],
+                timeout=25,
             )
             rendered = await asyncio.to_thread(self._renderer.render, raw) if isinstance(raw, bytes) else None
             grid = grid_from_map(rendered) if rendered else None
@@ -665,6 +669,7 @@ class DeviceController:
                 _LOGGER.info("No clean record returned for run %s", rid)
                 return
             run = _run(rid, record, grid, "robot", None, rendered=rendered)
+        self._record_maps_loaded.add(str(rid))
         self.history.add(run, map_asset(rendered, self._room_names) if rendered and run.route else None)
 
     def _mode(self) -> str | None:
@@ -691,10 +696,13 @@ class DeviceController:
 
     async def run_detail(self, run_id: str) -> dict[str, Any] | None:
         run = next((item for item in self.history.runs if item.id == run_id), None)
-        if run and not run.route and run_id.isdigit():
-            # Retry on demand: the record map request can be temporarily
-            # unavailable during history sync or the run may predate route
-            # recording. Try the robot's saved map when the user opens it.
+        if (
+            run and run_id.isdigit() and (not run.route or run.source == "live")
+            and run_id not in self._record_maps_loaded
+        ):
+            # A live map is only a snapshot of the last visible route. Fetch the
+            # run-specific historical map before replaying it so later map
+            # updates cannot silently substitute a different route.
             await self._backfill(int(run_id))
         return self.history.detail(run_id)
 
@@ -704,7 +712,7 @@ class DeviceController:
             raise ValueError("Cleaning run not found")
         record_id = int(run_id)
         record = None
-        map_data_v2 = None
+        record_map = None
         map_transport_events: list[dict[str, Any]] = []
         command_errors = []
         try:
@@ -717,17 +725,17 @@ class DeviceController:
         # Historical maps require the map RPC decoder (protocols 300/301). A
         # normal RPC channel cannot decode those replies, so trace the correct
         # MQTT map channel and record only protocol numbers and payload sizes.
-        map_data_v2, map_transport_events, map_error = await _probe_history_map(
+        record_map, map_transport_events, map_error = await _probe_history_map(
             self._p.map_content.rpc_channel,
-            "get_clean_record_map_v2",
+            RoborockCommand.GET_CLEAN_RECORD_MAP,
             [record_id],
             timeout=12,
         )
         if map_error:
-            command_errors.append({"command": "get_clean_record_map_v2", **map_error})
+            command_errors.append({"command": "get_clean_record_map", **map_error})
         features = self._p.device_features
         return {
-            "format": "roborock-history-diagnostics-v3",
+            "format": "roborock-history-diagnostics-v4",
             "run_id": run_id,
             "device": {
                 **self._identity(),
@@ -736,7 +744,7 @@ class DeviceController:
             },
             "stored_run": self.history.detail(run_id),
             "raw_clean_record": record,
-            "record_map_v2": _map_diagnostics(map_data_v2),
+            "record_map": _map_diagnostics(record_map),
             "map_transport_events": map_transport_events,
             "command_errors": command_errors,
             "note": (
