@@ -539,7 +539,7 @@ class DeviceController:
                 try:
                     async with self._map_lock:
                         await self._refresh_map()
-                    self._record_room_event()
+                    self._record_room_event(st)
                 except Exception as err:  # noqa: BLE001 - room details are optional
                     _LOGGER.debug("Couldn't capture the current room for cleaning history: %s", err)
             return 5
@@ -596,7 +596,7 @@ class DeviceController:
             and abs(record_end - self._pending_run_end) <= 600
         )
 
-    def _record_room_event(self) -> None:
+    def _record_room_event(self, status: dict[str, Any]) -> None:
         """Record room transitions from the current room id in the parsed live map."""
         room = self._map.robot_room if self._map else None
         if room is None or room <= 0:
@@ -606,7 +606,16 @@ class DeviceController:
             return
         names = {**self._room_names, **self._nicknames.get(self.device.duid)}
         name = names.get(room) or f"Room {room}"
-        self._run_events.append({"at": int(time.time()), "label": f"Cleaning {name}"})
+        mode = status.get("mode") or {}
+        settings = []
+        for key, title in (("fan", "Suction"), ("water", "Water"), ("mop", "Mop route")):
+            value = next((option["name"] for option in mode.get(f"{key}_options", [])
+                          if option["code"] == mode.get(key)), None)
+            if value is not None:
+                settings.append(f"{title}: {str(value).replace('_', ' ')}")
+        self._run_events.append({
+            "at": int(time.time()), "label": f"Cleaning {name}", "detail": " · ".join(settings)
+        })
         self._run_last_room = room
 
     def _record_run_event(self, status: dict[str, Any]) -> None:
