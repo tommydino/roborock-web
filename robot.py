@@ -627,19 +627,30 @@ class DeviceController:
             "detaching_the_mop": "Detaching mop mounts",
             "attaching_the_mop": "Installing mop mounts",
             "paused": "Cleaning paused",
+            "segment_cleaning": "Cleaning selected rooms",
+            "zoned_cleaning": "Cleaning selected zone",
+            "clean_mop_cleaning": "Vacuum pass",
+            "segment_clean_mop_cleaning": "Vacuum pass in selected rooms",
+            "zoned_clean_mop_cleaning": "Vacuum pass in selected zone",
+            "robot_status_mopping": "Mopping",
+            "segment_mopping": "Mopping selected rooms",
+            "zoned_mopping": "Mopping selected zone",
+            "clean_mop_mopping": "Mop pass",
+            "segment_clean_mop_mopping": "Mop pass in selected rooms",
+            "zoned_clean_mop_mopping": "Mop pass in selected zone",
+            "returning_home": "Returning to dock",
+            "docking": "Docking",
         }
         previous = self._run_last_state
         label = labels.get(state)
-        if label and state != previous:
-            # The two firmware states for mop washing can alternate; don't show
-            # duplicate entries for one continuous wash.
-            if not self._run_events or self._run_events[-1]["label"] != label:
-                self._run_events.append({"at": int(time.time()), "label": label})
-        elif status.get("phase") == "cleaning" and previous in {
+        if status.get("phase") == "cleaning" and previous in {
             "going_to_wash_the_mop", "back_to_dock_washing_duster", "emptying_the_bin",
             "washing_the_mop", "washing_the_mop_2", "detaching_the_mop", "attaching_the_mop", "paused",
         }:
             self._run_events.append({"at": int(time.time()), "label": "Resuming cleaning"})
+            self._run_last_room = None
+        if label and label != labels.get(previous):
+            self._run_events.append({"at": int(time.time()), "label": label})
         self._run_last_state = state
 
     async def _backfill(self, rid: int) -> None:
@@ -661,7 +672,7 @@ class DeviceController:
         except Exception as err:  # noqa: BLE001
             _LOGGER.info("No map for past run %s from this robot: %s", rid, err or type(err).__name__)
         if previous:
-            if not rendered:
+            if not rendered or not route_from_map(rendered):
                 return
             run = dataclasses.replace(previous, grid=grid or previous.grid, route=route_from_map(rendered))
         else:
@@ -669,7 +680,8 @@ class DeviceController:
                 _LOGGER.info("No clean record returned for run %s", rid)
                 return
             run = _run(rid, record, grid, "robot", None, rendered=rendered)
-        self._record_maps_loaded.add(str(rid))
+        if rendered and run.route:
+            self._record_maps_loaded.add(str(rid))
         self.history.add(run, map_asset(rendered, self._room_names) if rendered and run.route else None)
 
     def _mode(self) -> str | None:

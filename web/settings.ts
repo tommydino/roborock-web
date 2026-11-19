@@ -10,6 +10,8 @@ import { themeChoice } from "./theme";
 import type { Choice, RunDetail, RunSummary, Settings } from "./types";
 
 let runHistory: RunSummary[] = [];
+let historyRequest = 0;
+let fetchingHistoryMap = false;
 let selectedRunId: string | null = null;
 let selectedRun: RunDetail | null = null;
 let runHistoryLoading = true;
@@ -92,7 +94,7 @@ function routeMetrics(lines: number[][][]): { length: number; segments: Array<{ 
 
 function runDetailHtml(): string {
   if (!selectedRunId) return "";
-  if (runHistoryLoading || !selectedRun) return `<section class="run-detail"><div class="history-head"><b>Cleaning run</b><button class="btn-soft" data-run-close>Close</button></div><p class="muted">Loading run details…</p></section>`;
+  if (!selectedRun) return `<section class="run-detail"><div class="history-head"><b>Cleaning run</b><button class="btn-soft" data-run-close>Close</button></div><p class="muted">Loading run details…</p></section>`;
   const run = selectedRun;
   const clock = (ts: number) => new Date(ts * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   const duration = run.duration ?? Math.max(0, run.end - run.begin);
@@ -126,11 +128,12 @@ function runDetailHtml(): string {
         <b id="run-replay-phase" class="run-replay-phase">Vacuuming</b>
       </div>
       <p class="run-disclaimer">The robot follows its saved route once. Mop coverage appears along that route. Roborock doesn't provide timestamps for individual path points, so replay timing is approximate.</p>`
-      : `<div class="run-no-route">No route map was saved for this run. New runs are saved with their route while this app is running.</div>`}
+      : `<div class="run-no-route">${fetchingHistoryMap ? 'Loading the map for this run…' : 'No saved route available for this run.'}</div>`}
     <div class="run-timeline"><b>Run timeline</b><ol>
       ${timeline.map((event) => `<li><time>${clock(event.at)}</time><span>${esc(event.label)}</span></li>`).join("")}
       ${run.wash_count != null && !recordedEvents.some((event) => event.label === "Washing mop") ? `<li class="run-timeline-note"><time>—</time><span>Mop washed ${run.wash_count} times · individual times unavailable</span></li>` : ""}
-    </ol></div>
+      ${run.dust_collected && !recordedEvents.some((event) => event.label === "Emptying dustbin") ? '<li class="run-timeline-note"><time>—</time><span>Dustbin emptied · time unavailable</span></li>' : ""}
+    </ol><p>Elapsed ${fmtDuration(run.end - run.begin)} · Cleaning ${fmtDuration(duration)}</p></div>
     <p class="run-disclaimer">${recordedEvents.length
       ? "Events were observed while this app was open. Room changes are sampled from map updates, so their times are approximate."
       : "This run has summary history only. Detailed dock and resume events are recorded for runs observed while this app is open."}</p>
@@ -276,19 +279,37 @@ async function openHistoryRun(id: string): Promise<void> {
   mapPanX = 0;
   mapPanY = 0;
   renderRunHistory();
+  const request = ++historyRequest;
+  const current = () => request === historyRequest && selectedRunId === id;
+  const path = devicePath(`runs/${encodeURIComponent(id)}`);
+  fetchingHistoryMap = false;
   try {
-    selectedRun = await api<RunDetail>(devicePath(`runs/${encodeURIComponent(id)}`));
-  } catch (e) {
-    toast(`Couldn't load this run: ${errorMessage(e)}`, true);
-    selectedRunId = null;
-  } finally {
-    runHistoryLoading = false;
-    if (selectedRun) {
-      runHistory = runHistory.map((run) => run.id === id
-        ? { ...run, mapped: Boolean(selectedRun?.route && selectedRun?.map) }
-        : run);
+    const cached = await api<RunDetail>(path + "?cached=true");
+    if (!current()) return;
+    selectedRun = cached;
+    if ((!cached.route || !cached.map) && cached.source !== "demo") {
+      fetchingHistoryMap = true;
+      renderRunHistory();
+      const refreshed = await api<RunDetail>(path);
+      if (!current()) return;
+      selectedRun = refreshed;
     }
-    renderRunHistory();
+  } catch (e) {
+    if (current()) {
+      toast(`Couldn't load run details: ${errorMessage(e)}`, true);
+      if (!selectedRun) selectedRunId = null;
+    }
+  } finally {
+    if (request === historyRequest) {
+      fetchingHistoryMap = false;
+      runHistoryLoading = false;
+      if (current() && selectedRun) {
+        runHistory = runHistory.map((run) => run.id === id
+          ? { ...run, mapped: Boolean(selectedRun?.route && selectedRun?.map) }
+          : run);
+      }
+      renderRunHistory();
+    }
   }
 }
 

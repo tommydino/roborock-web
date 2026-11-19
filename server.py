@@ -212,8 +212,9 @@ def create_app(demo: bool, data_dir: Path | None = None) -> FastAPI:
         return await (await ctrl(duid)).runs()
 
     @app.get("/api/devices/{duid}/runs/{run_id}")
-    async def run_detail(duid: str, run_id: str):
-        detail = await (await ctrl(duid)).run_detail(run_id)
+    async def run_detail(duid: str, run_id: str, cached: bool = False):
+        controller = await ctrl(duid)
+        detail = controller.history.detail(run_id) if cached and not demo else await controller.run_detail(run_id)
         if detail is None:
             raise HTTPException(404, "Cleaning run not found")
         return detail
