@@ -121,6 +121,24 @@ function dockWaypoints(run: RunDetail): string {
   }).join("")}</ol></details>`;
 }
 
+function appTimelineKey(id: string): string {
+  return `roborock:app-timeline:${S.duid}:${id}`;
+}
+
+function readAppTimeline(id: string): string {
+  try { return localStorage.getItem(appTimelineKey(id)) ?? ""; }
+  catch { return ""; }
+}
+
+function appTimelineRows(value: string): string {
+  return value.split("\n").map((line) => {
+    const match = /^(\d\d:\d\d)\s+(.+)$/.exec(line);
+    if (!match) return "";
+    const [label, ...details] = match[2].split(" | ");
+    return `<li><time>${esc(match[1])}</time><span><b>${esc(label)}</b>${details.map((detail) => `<br><small>${esc(detail)}</small>`).join("")}</span></li>`;
+  }).join("");
+}
+
 function runDetailHtml(): string {
   if (!selectedRunId) return "";
   if (!selectedRun) return `<section class="run-detail"><div class="history-head"><b>Cleaning run</b><button class="btn-soft" data-run-close>Close</button></div><p class="muted">Loading run details…</p></section>`;
@@ -131,6 +149,7 @@ function runDetailHtml(): string {
   const mode = run.mode?.replaceAll("_", " ") ?? null;
   const startType = run.start_type?.replaceAll("_", " ") ?? null;
   const finishReason = run.finish_reason?.replaceAll("_", " ") ?? null;
+  const appTimeline = readAppTimeline(run.id);
   const recordedEvents = run.events ?? [];
   const timeline: Array<{ at: number; label: string; detail?: string }> = [
     { at: run.begin, label: `Cleaning started${startType ? ` · ${startType}` : ""}` },
@@ -158,14 +177,15 @@ function runDetailHtml(): string {
       </div>
       <p class="run-disclaimer">The robot follows its saved route once. Mop coverage appears along that route. Roborock doesn't provide timestamps for individual path points, so replay timing is approximate.</p>`
       : `<div class="run-no-route">${fetchingHistoryMap ? 'Loading the map for this run…' : 'No saved route available for this run.'}</div>`}
-    <div class="run-timeline"><b>Run timeline</b><ol>
+    ${appTimeline ? `<div class="run-timeline"><b>Roborock app timeline</b><ol>${appTimelineRows(appTimeline)}</ol></div>` : `<div class="run-timeline"><b>Run timeline</b><ol>
       ${timeline.map((event) => `<li><time>${clock(event.at)}</time><span>${esc(event.label)}${event.detail ? `<br><small>${esc(event.detail)}</small>` : ""}</span></li>`).join("")}
       ${run.wash_count != null && !recordedEvents.some((event) => event.label === "Washing mop") ? `<li class="run-timeline-note"><time>—</time><span>Mop washed ${run.wash_count} times · individual times unavailable</span></li>` : ""}
       ${run.dust_collected && !recordedEvents.some((event) => event.label === "Emptying dustbin") ? '<li class="run-timeline-note"><time>—</time><span>Dustbin emptied · time unavailable</span></li>' : ""}
     </ol>${dockWaypoints(run)}<p>Elapsed ${fmtDuration(run.end - run.begin)} · Cleaning ${fmtDuration(duration)}</p></div>
     <p class="run-disclaimer">${recordedEvents.length
       ? "Events were observed while this app was open. Room changes are sampled from map updates, so their times are approximate."
-      : "This run has summary history only. Detailed dock and resume events are recorded for runs observed while this app is open."}</p>
+      : "This run has summary history only. Detailed dock and resume events are recorded for runs observed while this app is open."}</p>`}
+    <details><summary>Edit app timeline</summary><label>One event per line: HH:MM Event | Detail<br><textarea data-app-timeline rows="8" style="width:100%" maxlength="20000">${esc(appTimeline)}</textarea></label><button class="btn-soft" data-save-timeline>Save for this run</button></details>
     ${run.source === "demo" ? "" : `<a class="btn-soft run-source-data" href="${esc(devicePath(`runs/${encodeURIComponent(run.id)}/diagnostics`))}">Download raw run data for timeline analysis</a>`}
     <p class="run-disclaimer">The export includes the saved map and may reveal your home's floorplan. Share it only if you are comfortable with that.</p>
   </section>`;
@@ -344,6 +364,20 @@ async function openHistoryRun(id: string): Promise<void> {
 
 const settingsRoot = $("#settings");
 settingsRoot.addEventListener("click", async (e) => {
+  if (closest(e.target, "[data-save-timeline]") && selectedRun) {
+    const value = settingsRoot.querySelector<HTMLTextAreaElement>("[data-app-timeline]")?.value.trim() ?? "";
+    if (value && value.split("\n").some((line) => !/^([01]\d|2[0-3]):[0-5]\d\s+\S/.test(line))) {
+      toast("Start each event with HH:MM and its name.", true);
+      return;
+    }
+    try {
+      const key = appTimelineKey(selectedRun.id);
+      if (value) localStorage.setItem(key, value);
+      else localStorage.removeItem(key);
+    } catch { toast("Could not save this timeline in the browser.", true); return; }
+    renderRunHistory();
+    return;
+  }
   const waypoint = closest<HTMLButtonElement>(e.target, "[data-waypoint]");
   if (waypoint) {
     routeProgress = Number(waypoint.dataset.waypoint);
