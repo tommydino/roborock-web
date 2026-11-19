@@ -726,3 +726,6 @@ svg.i.tiny { width: 12px; height: 12px; }
 .rr-major .rr-detail { background:var(--soft,rgba(128,128,128,.1)); padding:10px 13px; border-radius:12px; }
 .rr-timeline footer small { font-size:.68rem; }
 .rr-timeline footer { font-size:1.3rem; display:flex; justify-content:space-evenly; padding:12px; text-align:center; border-top:1px solid var(--line); }
+
+.rr-untimed { padding: 12px 16px; border-top: 1px solid var(--line); }
+.rr-untimed ul { margin: 6px 0 0; padding-left: 20px; }

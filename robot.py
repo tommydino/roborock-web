@@ -234,6 +234,8 @@ class DeviceController:
         self._state_changed = asyncio.Event()
         self._run_seen = False  # a run was going on at the last history check
         self._dock_event: tuple[int, str] | None = None
+        self._mount_sample: tuple[int, int] | None = None
+        self._mount_report: tuple[str, int, bool] | None = None
         self._observed_replenish: bool | None = None
         self._cleaned_in_run = False
         self._resume_pending = False
@@ -589,6 +591,8 @@ class DeviceController:
         if st.get("state") is None or self._status_failed_at > self._status_at:
             return 120  # can't reach it
         active = st.get("job") or st.get("phase") in ("cleaning", "returning", "paused")
+        self._observe_mop_mount(getattr(self._p.status, "water_box_carriage_status", None),
+                                bool(active or self._run_seen or st.get("phase") == "dock"))
         # Dock states such as washing the mop are part of a run only after we've
         # already seen that run start. This avoids recording routine dock work.
         active = active or (self._run_seen and st.get("phase") == "dock")
@@ -705,6 +709,25 @@ class DeviceController:
         self.history.observe(int(time.time()), f"Cleaning {name}", " · ".join(settings))
         self._run_last_room = (room, cleaning_pass)
 
+    def _observe_mop_mount(self, value: int | None, active: bool) -> None:
+        # A short mounting action may finish between two ordinary status polls.
+        # An initial reading (or a reading after a long gap) is only a baseline.
+        previous = self._mount_sample
+        if value not in (0, 1):
+            self._mount_sample = None
+            return
+        now = int(time.time())
+        self._mount_sample = (value, now)
+        if active and previous and previous[0] != value and 0 <= now - previous[1] <= 40:
+            self._record_mount("Installing mop mounts" if value else "Detaching mop mounts", now, sensor=True)
+
+    def _record_mount(self, label: str, at: int, *, sensor: bool) -> None:
+        prior = self._mount_report
+        self._mount_report = (label, at, sensor)
+        if prior and prior[0] == label and prior[2] != sensor and 0 <= at - prior[1] <= 40:
+            return  # the state message and mount sensor describe the same action
+        self.history.observe(at, label, "Observed from the mop mount sensor" if sensor else None)
+
     def _record_run_event(self, status: dict[str, Any], at: int | None = None) -> None:
         """Persist observed transitions independently of the browser and record sync."""
         state = status.get("state")
@@ -754,7 +777,10 @@ class DeviceController:
         }:
             self._resume_pending = True
 
-        if label and label != labels.get(previous):
+        if state in {"detaching_the_mop", "attaching_the_mop"}:
+            self._record_mount(labels[state], observed_at, sensor=False)
+            self._dock_event = None
+        elif label and label != labels.get(previous):
             row = self.history.observe(observed_at, label)
             self._dock_event = (row, label) if label in {"Washing mop", "Emptying dustbin"} else None
         elif label != labels.get(previous):

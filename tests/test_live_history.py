@@ -70,3 +70,19 @@ class LiveTimelineTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(restored._observations.execute("SELECT COUNT(*) FROM events").fetchone()[0], 0)
             restored._observations.close()
             history._observations.close()
+
+    def test_mount_changes_between_polls_and_explicit_state_are_recorded_once(self):
+        begin = int(time.time()) - 600
+        history = History(None)
+        controller = DeviceController(SimpleNamespace(duid="test", v1_properties=None), history=history)
+        history.add(Run("first", begin, begin + 600))
+        for seconds, mounted in [(0, 1), (5, 0), (10, 0), (20, 1), (200, 0)]:
+            with patch("robot.time.time", return_value=begin + seconds):
+                controller._observe_mop_mount(mounted, active=True)
+                if seconds == 5:
+                    controller._record_run_event({"state": "detaching_the_mop"})
+                if seconds == 10:
+                    controller._record_run_event({"state": "attaching_the_mop"})
+        self.assertEqual([(e["at"] - begin, e["label"]) for e in history.detail("first")["events"]],
+                         [(5, "Detaching mop mounts"), (10, "Installing mop mounts")])
+        history._observations.close()
