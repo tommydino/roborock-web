@@ -230,7 +230,7 @@ export interface RunDetail {
   avoid_count: number | null;
   wash_count: number | null;
   dust_collected?: boolean | null;
-  events?: Array<{ at: number; label: string }>;
+  events?: Array<{ at: number; label: string; detail?: string }>;
   route: { map: string; path: Polyline[]; mop_path: Polyline[] } | null;
   map: {
     base: string;
