@@ -1431,13 +1431,13 @@ def _map_diagnostics(raw: Any) -> dict[str, Any]:
         return {"available": False, "response": raw}
 
     blocks: list[dict[str, Any]] = []
-    offset = 20 if len(raw) >= 20 and raw[:2] == b"rr" else 0
-    while offset + 12 <= len(raw):
+    offset = int.from_bytes(raw[2:4], "little") if raw[:2] == b"rr" else len(raw)
+    while 20 <= offset <= len(raw) - 8:
         block_type = int.from_bytes(raw[offset : offset + 2], "little")
-        header_length = int.from_bytes(raw[offset + 4 : offset + 6], "little")
-        payload_length = int.from_bytes(raw[offset + 8 : offset + 12], "little")
+        header_length = int.from_bytes(raw[offset + 2 : offset + 4], "little")
+        payload_length = int.from_bytes(raw[offset + 4 : offset + 8], "little")
         end = offset + header_length + payload_length
-        if header_length < 12 or end > len(raw):
+        if header_length < 8 or end > len(raw):
             break
         block: dict[str, Any] = {
             "type": block_type,
@@ -1448,7 +1448,7 @@ def _map_diagnostics(raw: Any) -> dict[str, Any]:
         # are timestamps keyed by map-block type, not documented timeline labels.
         if block_type == 34:
             entries = []
-            for pos in range(offset + 12, end - 4, 5):
+            for pos in range(offset + header_length, end - 4, 5):
                 entries.append({
                     "type": raw[pos],
                     "unix_time": int.from_bytes(raw[pos + 1 : pos + 5], "little"),
