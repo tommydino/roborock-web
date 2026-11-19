@@ -125,7 +125,7 @@ function runDetailHtml(): string {
         <span id="run-progress-label">${fmtDuration(0)} / ${fmtDuration(duration)}</span>
         <b id="run-replay-phase" class="run-replay-phase">Vacuuming</b>
       </div>
-      <p class="run-disclaimer">The saved vacuum route plays first, followed by the separate mop route. Roborock doesn't provide timestamps for individual path points, so replay timing is approximate.</p>`
+      <p class="run-disclaimer">The robot follows its saved route once. Mop coverage appears along that route. Roborock doesn't provide timestamps for individual path points, so replay timing is approximate.</p>`
       : `<div class="run-no-route">No route map was saved for this run. New runs are saved with their route while this app is running.</div>`}
     <div class="run-timeline"><b>Run timeline</b><ol>
       ${timeline.map((event) => `<li><time>${clock(event.at)}</time><span>${esc(event.label)}</span></li>`).join("")}
@@ -146,28 +146,42 @@ function syncRouteProgress(): void {
   const progress = Number(range.value) / 1000;
   if (selectedRun?.route) {
     const clean = routeMetrics(selectedRun.route.path);
-    const mop = routeMetrics(selectedRun.route.mop_path);
-    const totalLength = clean.length + mop.length;
-    for (const group of [
-      { name: "clean", lines: selectedRun.route.path, metrics: clean, offset: 0 },
-      // Roborock stores vacuum and mop trails as separate layers without
-      // timestamps for their points. Replay them in sequence so a second,
-      // unrelated-looking trail doesn't start drawing beside the playhead.
-      { name: "mop", lines: selectedRun.route.mop_path, metrics: mop, offset: clean.length },
-    ]) {
-      let lineOffset = 0;
-      const lengths = group.lines.map((line) => routeMetrics([line]).length);
-      const visible = group.name === "clean" ? showVacuumRoute : showMopRoute;
-      card.querySelectorAll<SVGPolylineElement>(`[data-route-group="${group.name}"]`).forEach((line, index) => {
-        const lineLength = lengths[index] ?? 0;
-        const shown = Math.max(0, Math.min(lineLength, progress * totalLength - group.offset - lineOffset));
-        line.style.strokeDasharray = `${(shown / Math.max(lineLength, 1)) * 1000} 1000`;
-        line.style.visibility = visible ? "visible" : "hidden";
-        lineOffset += lineLength;
-      });
+    const route = clean;
+    const targetDistance = progress * clean.length;
+    const same = (a: number[], b: number[]) => a[0] === b[0] && a[1] === b[1];
+    // Mop lines are contiguous slices of the travel path. Locate each slice
+    // in order so repeated visits to the same coordinate stay distinct.
+    let offset = 0;
+    let mopIndex = 0;
+    let mopping = false;
+    const draw = (group: string, index: number, start: number, length: number, visible: boolean) => {
+      const line = card.querySelector<SVGPolylineElement>(`[data-route-group="${group}"][data-route-index="${index}"]`);
+      if (!line) return;
+      const fraction = Math.max(0, Math.min(1, (targetDistance - start) / (length || 1)));
+      line.style.strokeDasharray = `${fraction * 1000} 1000`;
+      line.style.visibility = visible && fraction > 0 ? "visible" : "hidden";
+    };
+    const mopLines = selectedRun.route.mop_path;
+    for (const [index, points] of selectedRun.route.path.entries()) {
+      const lengths = [0];
+      for (let i = 1; i < points.length; i++) {
+        lengths.push(lengths[i - 1] + Math.hypot(points[i][0] - points[i-1][0], points[i][1] - points[i-1][1]));
+      }
+      const length = lengths[lengths.length - 1];
+      draw("clean", index, offset, length, showVacuumRoute);
+      for (let i = 0; i < points.length && mopIndex < mopLines.length; i++) {
+        const mop = mopLines[mopIndex];
+        if (!mop.length || i + mop.length > points.length || !mop.every((p, j) => same(p, points[i+j]))) continue;
+        const start = offset + lengths[i];
+        const end = offset + lengths[i + mop.length - 1];
+        draw("mop", mopIndex++, start, end - start, showMopRoute);
+        if (targetDistance >= start && targetDistance < end) mopping = true;
+        i += mop.length - 1;
+      }
+      offset += length;
     }
+    for (; mopIndex < mopLines.length; mopIndex++) draw("mop", mopIndex, 0, 1, progress === 1 && showMopRoute);
     const playhead = card.querySelector<SVGGElement>("#run-playhead");
-    const route = routeMetrics([...selectedRun.route.path, ...selectedRun.route.mop_path]);
     if (playhead && route.length > 0) {
       const target = Math.min(route.length, progress * route.length);
       const seg = route.segments.find((s) => target <= s.from + s.length) ?? route.segments[route.segments.length - 1];
@@ -179,9 +193,8 @@ function syncRouteProgress(): void {
       playhead.setAttribute("visibility", progress > 0 ? "visible" : "hidden");
     }
     const phase = card.querySelector<HTMLElement>("#run-replay-phase");
-    const mopping = mop.length > 0 && progress * totalLength >= clean.length;
     if (phase) {
-      phase.textContent = mopping ? "Mopping" : "Vacuuming";
+      phase.textContent = mopping ? "Mop coverage" : "Travel path";
       phase.classList.toggle("is-mopping", mopping);
     }
     playhead?.classList.toggle("is-mopping", mopping);
