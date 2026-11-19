@@ -53,7 +53,7 @@ from roborock.web_api import RoborockApiClient
 
 import roborock.mqtt.roborock_session as _mqtt_session
 
-from history import Grid, History, Run, estimate_model, freshness, grid_from_map, map_asset, route_from_map
+from history import KEEP_DAYS, RECENT_RUNS, Grid, History, Run, estimate_model, freshness, grid_from_map, map_asset, route_from_map
 from maprender import MapRenderer, RenderedMap
 
 _LOGGER = logging.getLogger(__name__)
@@ -234,7 +234,9 @@ class DeviceController:
         self._run_map_at = 0.0
         self._history_at = 0.0
         self._record_maps_loaded: set[str] = set()
-        self._to_backfill: list[int] = []  # older runs from the robot's list, still to fetch
+        self._import_lock = asyncio.Lock()
+        self._import_queue: list[int] = []
+        self._index_checked = 0.0
         self._p = device.v1_properties
         self._renderer = MapRenderer()
         self._status_at = 0.0
@@ -603,7 +605,10 @@ class DeviceController:
             summary = self._p.clean_summary
             await summary.refresh()
             ids = sorted({int(i) for i in summary.records or []}, reverse=True)
-            if ids and not self.history.has(str(ids[0])) and summary.last_clean_record:
+            latest = next((r for r in self.history.runs if ids and r.id == str(ids[0])), None)
+            if ids and summary.last_clean_record and (
+                latest is None or (latest.source == "robot" and not latest.route)
+            ):
                 # The map keeps showing the last run's path until the next one starts.
                 run_map = None
                 try:
@@ -618,6 +623,8 @@ class DeviceController:
                     ids[0], summary.last_clean_record, grid, "live", self._p.status.current_map,
                     self._mode(), run_map, events,
                 )
+                if latest and not events and latest.events:
+                    run.events = latest.events
                 self.history.add(run, map_asset(run_map, self._room_names) if run_map and run.route else None)
                 if events:
                     self._pending_run_events = []
@@ -632,11 +639,13 @@ class DeviceController:
                     self.history.add(dataclasses.replace(previous, events=self._pending_run_events))
                     self._pending_run_events = []
                     self._pending_run_end = None
-            self._to_backfill = [rid for rid in ids[1:] if not self.history.has(str(rid))]
-        # Fill in older runs from the robot's own list, one per look.
-        if self._to_backfill:
-            await self._backfill(self._to_backfill.pop(0))
-            return 15
+            self._import_queue = [rid for rid in ids[1:RECENT_RUNS] if not self.history.has(str(rid))
+                                  and rid >= time.time() - KEEP_DAYS * 86400]
+        if self._import_queue:
+            rid = self._import_queue.pop(0)
+            if not self.history.has(str(rid)):
+                await self._import_record(rid)
+            return 5
         # Notice a newly started run soon enough to capture its later dock events.
         return 30
 
@@ -836,7 +845,31 @@ class DeviceController:
         }
 
     async def runs(self) -> list[dict[str, Any]]:
+        async with self._import_lock:
+            summary = self._p.clean_summary
+            if not summary.records or time.monotonic() - self._index_checked > 60:
+                try:
+                    await summary.refresh()
+                    self._index_checked = time.monotonic()
+                except Exception as err:
+                    _LOGGER.info("Could not refresh robot history: %s", err)
+                    if not self.history.runs and not summary.records:
+                        raise
+            cutoff = time.time() - KEEP_DAYS * 86400
+            ids = sorted({int(rid) for rid in summary.records or [] if int(rid) >= cutoff}, reverse=True)
+            missing = [rid for rid in ids[:RECENT_RUNS] if not self.history.has(str(rid))]
+            # Fetch lightweight records only. Route maps are loaded when opened.
+            for offset in range(0, len(missing), 2):
+                await asyncio.gather(*(self._import_record(rid) for rid in missing[offset:offset + 2]))
         return self.history.list()
+
+    async def _import_record(self, rid: int) -> None:
+        try:
+            record = await self._p.clean_summary.get_clean_record(rid)
+            if record and not self.history.has(str(rid)) and str(rid) in {str(i) for i in self._p.clean_summary.records or []}:
+                self.history.add(_run(rid, record, None, "robot", None))
+        except Exception as err:
+            _LOGGER.info("Could not import cleaning run %s: %s", rid, err)
 
     async def delete_run(self, run_id: str) -> None:
         if not run_id.isdigit() or not self.history.has(run_id):
@@ -847,7 +880,6 @@ class DeviceController:
         if run_id in remaining:
             raise RoborockException("The robot did not confirm that this cleaning run was deleted")
         self.history.remove(run_id)
-        self._to_backfill = [rid for rid in self._to_backfill if str(rid) != run_id]
 
     async def _refresh_map(self) -> None:
         p = self._p
