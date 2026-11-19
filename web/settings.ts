@@ -1,5 +1,6 @@
 // The Settings tab.
 
+import { runTimeline } from "./run-timeline";
 import { parseTranscript, validTimelineLine } from "./app-timeline";
 import type { AppTimeline } from "./app-timeline";
 import { api, devicePath } from "./api";
@@ -167,11 +168,6 @@ function runDetailHtml(): string {
   const result = run.complete === true ? "Completed" : run.complete === false ? "Stopped before completion" : "Result not reported";
   const mode = run.mode?.replaceAll("_", " ") ?? null;
   const startType = run.start_type?.replaceAll("_", " ") ?? null;
-  const names: Record<string, string> = {
-    "Washing mop": "Wash Mop", "Emptying dustbin": "Auto Emptying",
-    "Resuming cleaning": "Resume", "Detaching mop mounts": "Detaching mop cloth mounts",
-    "Installing mop mounts": "Installing mop cloth mounts",
-  };
   const { text: appTimeline, transcript } = readAppTimeline(run.id);
   const extra = run.record_details;
   const area = transcript ? `${transcript.area_m2} m²` :
@@ -182,11 +178,7 @@ function runDetailHtml(): string {
     run.wash_count != null ? `Mop wash × ${run.wash_count}` : null,
   ].filter(Boolean).join(" · ");
   const recordedEvents = run.events ?? [];
-  const timeline: Array<{ at: number; label: string; detail?: string }> = [
-    { at: run.begin, label: extra?.rooms ? "Start selective room cleaning" : "Start cleaning" },
-    ...recordedEvents,
-    { at: run.end, label: run.complete === true ? "Cleaning Finished" : result, detail: run.finish_reason?.replaceAll("_", " ") },
-  ].sort((a, b) => a.at - b.at);
+  const timeline = runTimeline(run, result);
   const stats = [fmtDuration(duration), area, mode,
     run.wash_count != null ? `${run.wash_count} mop washes` : null,
     run.dust_collected ? "Dust collected" : null,
@@ -212,14 +204,12 @@ function runDetailHtml(): string {
       <summary><strong>${run.complete === true ? '<span class="rr-done" aria-hidden="true">✓</span>Finished cleaning' : esc(result)}</strong><span class="rr-disclosure" aria-hidden="true"></span>
       <small>${esc(subtitle)}</small></summary>
       <ol>${appTimeline ? appTimelineRows(appTimeline) : timeline.map(event => {
-        const room = event.label.startsWith("Cleaning ") && event.detail !== undefined && event.label !== "Cleaning Finished" && event.label !== "Cleaning paused";
-        const label = room ? "Clean " + event.label.slice(9) : names[event.label] ?? event.label;
-        return timelineRow(clock(event.at), label, event.detail ? event.detail.split(" · ") : [], room || isMilestone(label));
+        const time = event.at === null ? "—" : (event.approximate ? "≈ " : "") + clock(event.at);
+        return timelineRow(time, event.label, event.detail ? event.detail.split(" · ") : [], isMilestone(event.label));
       }).join("")}</ol>
       <footer><span>${fmtDuration(duration)}<small>Cleaning Time</small></span><span>${area}<small>Cleaning Area</small></span></footer>
     </details>
-    <p class="run-disclaimer">${appTimeline ? "Transcribed from the Roborock app." : recordedEvents.length ? "Times show when Roborock Web observed each change." : "Only the start and finish times are available for this run."}</p>
-    ${!appTimeline && extra?.dirty_replenish ? `<p class="run-disclaimer">Re-cleaned area reported for this run: ${fmtArea(extra.dirty_replenish)} · time unavailable</p>` : ""}
+    <p class="run-disclaimer">${appTimeline ? "Transcribed from the Roborock app." : recordedEvents.length ? "Times show when Roborock Web observed each change." : "No live transitions were recorded for this run."}</p>
     ${dockWaypoints(run)}
     <details><summary>Edit app timeline</summary><label>One event per line: HH:MM Event | Detail<br><textarea data-app-timeline rows="8" style="width:100%" maxlength="20000">${esc(appTimeline)}</textarea></label><button class="btn-soft" data-save-timeline>Save for this run</button><label>Import a transcript for this run <input type="file" accept=".json,application/json" data-import-timeline></label><small>Saved in this browser.</small></details>
     ${run.source === "demo" ? "" : `<a class="btn-soft run-source-data" href="${esc(devicePath(`runs/${encodeURIComponent(run.id)}/diagnostics`))}">Download raw run data for timeline analysis</a>`}

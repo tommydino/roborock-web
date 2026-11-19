@@ -46,6 +46,7 @@ from roborock.devices.cache import CacheData, DeviceCacheData
 from roborock.devices.device_manager import DeviceManager, UserParams, create_device_manager
 from roborock.devices.file_cache import FileCache
 from roborock.devices.transport.local_channel import LocalChannel
+from roborock.devices.traits.v1.common import merge_trait_values
 from roborock.devices.traits.v1.consumeable import ConsumableAttribute
 from roborock.exceptions import RoborockException, RoborockRateLimit, RoborockTooFrequentCodeRequests
 from roborock.roborock_typing import RoborockCommand
@@ -89,6 +90,13 @@ CLEANING_STATES = {
     S.going_to_target, S.patrol, S.remote_control_active, S.manual_mode, S.robot_status_mopping,
     S.clean_mop_cleaning, S.clean_mop_mopping, S.segment_mopping, S.segment_clean_mop_cleaning,
     S.segment_clean_mop_mopping, S.zoned_mopping, S.zoned_clean_mop_cleaning, S.zoned_clean_mop_mopping,
+}
+# Explicit pass states take precedence over the configured cleaning mode.
+ROOM_PASS = {
+    "cleaning": None, "spot_cleaning": None, "zoned_cleaning": None, "segment_cleaning": None,
+    "robot_status_mopping": "Mop", "segment_mopping": "Mop", "zoned_mopping": "Mop",
+    "clean_mop_mopping": "Mop", "segment_clean_mop_mopping": "Mop", "zoned_clean_mop_mopping": "Mop",
+    "clean_mop_cleaning": "Vacuum", "segment_clean_mop_cleaning": "Vacuum", "zoned_clean_mop_cleaning": "Vacuum",
 }
 RETURNING_STATES = {S.returning_home, S.docking, S.going_to_wash_the_mop, S.back_to_dock_washing_duster}
 DOCK_BUSY_STATES = {
@@ -224,11 +232,12 @@ class DeviceController:
         self._fresh: tuple[tuple, dict[str, Any]] | None = None
         self._state_updates: deque[tuple[int, Any]] = deque(maxlen=512)
         self._state_changed = asyncio.Event()
-        self._prep_events: deque[tuple[int, Any]] = deque(maxlen=12)
         self._run_seen = False  # a run was going on at the last history check
-        self._run_events: list[dict[str, Any]] = []
-        self._pending_run_events: list[dict[str, Any]] = []
-        self._pending_run_end: int | None = None
+        self._dock_event: tuple[int, str] | None = None
+        self._observed_replenish: bool | None = None
+        self._cleaned_in_run = False
+        self._resume_pending = False
+        self._room_status: dict[str, Any] = {}
         self._run_last_state: str | None = None
         self._run_last_room: tuple[int, str | None] | None = None
         self._run_map_at = 0.0
@@ -262,7 +271,15 @@ class DeviceController:
             async with self._status_lock:
                 if time.monotonic() - self._status_at > STATUS_TTL:
                     try:
-                        await p.status.refresh()
+                        # Use the same status request and library conversion as refresh(),
+                        # retaining per-room fields omitted by the typed status model.
+                        raw = await p.status.rpc_channel.send_command(RoborockCommand.GET_STATUS)
+                        parsed = p.status.converter.convert(raw)
+                        merge_trait_values(p.status, parsed)
+                        values = raw[0] if isinstance(raw, list) else raw
+                        info = values.get("cleaning_info")
+                        self._room_status = dict(info) if isinstance(info, dict) else {}
+                        self._room_status["sequence"] = values.get("seq_type")
                         self._status_at = time.monotonic()
                         self._status_error = None
                     except Exception as err:  # noqa: BLE001 - any failure here means "can't reach it right now"
@@ -561,29 +578,38 @@ class DeviceController:
         while self._state_updates:
             at, state = self._state_updates.popleft()
             latest_push = state
-            if not self._run_seen and state in {S.detaching_the_mop, S.attaching_the_mop}:
-                self._prep_events.append((at, state))
-            if self._run_seen or state in CLEANING_STATES:
-                if not self._run_seen:
-                    self._record_preparation(at)
-                self._record_run_event({"state": _name(state), "phase": "cleaning" if state in CLEANING_STATES else None}, at)
+            if self._run_seen or state in CLEANING_STATES | DOCK_BUSY_STATES:
+                self._record_run_event({"state": _name(state)}, at)
+            if state in CLEANING_STATES:
                 self._run_seen = True
         # The status cache may still describe the previous phase for two
         # seconds after a push. Wait for a fresh poll before closing a run.
         if latest_push is not None and st.get("state") != _name(latest_push):
             return 2
-        if st.get("state") is None:
+        if st.get("state") is None or self._status_failed_at > self._status_at:
             return 120  # can't reach it
         active = st.get("job") or st.get("phase") in ("cleaning", "returning", "paused")
         # Dock states such as washing the mop are part of a run only after we've
         # already seen that run start. This avoids recording routine dock work.
         active = active or (self._run_seen and st.get("phase") == "dock")
+        # A dock preparation can precede the first cleaning push. Record it
+        # immediately; standalone dock actions fall outside run boundaries.
+        if not active and st.get("phase") == "dock":
+            self._record_run_event(st)
+            return 5
+        if not active and not self._run_seen:
+            self._run_last_state = None
         if active:
-            if not self._run_seen:
-                self._record_preparation(int(time.time()))
             self._record_run_event(st)
             self._run_seen = True
-            if st.get("phase") == "cleaning" and time.monotonic() - self._run_map_at >= 20:
+            if self._dock_event:
+                row, label = self._dock_event
+                self._dock_event = None
+                await self._describe_dock_event(row, label)
+            segment = self._room_status.get("segment_id")
+            if st.get("phase") == "cleaning" and type(segment) is int and segment > 0:
+                self._record_room_event(st, segment)
+            elif st.get("phase") == "cleaning" and time.monotonic() - self._run_map_at >= 20:
                 self._run_map_at = time.monotonic()
                 try:
                     async with self._map_lock:
@@ -593,10 +619,10 @@ class DeviceController:
                     _LOGGER.debug("Couldn't capture the current room for cleaning history: %s", err)
             return 5
         if self._run_seen or time.monotonic() - self._history_at >= 900:
-            if self._run_seen and self._run_events:
-                self._pending_run_events = self._run_events
-                self._pending_run_end = int(time.time())
-            self._run_events = []
+            self._observed_replenish = None
+            self._cleaned_in_run = False
+            self._resume_pending = False
+            self._dock_event = None
             self._run_last_state = None
             self._run_last_room = None
             self._run_map_at = 0.0
@@ -618,27 +644,13 @@ class DeviceController:
                 except Exception as err:
                     _LOGGER.info("Saving run events without a fresh map: %s", err)
                 grid = grid_from_map(run_map) if run_map else None
-                events = self._pending_run_events if self._pending_matches(summary.last_clean_record.end) else None
                 run = _run(
                     ids[0], summary.last_clean_record, grid, "live", self._p.status.current_map,
-                    self._mode(), run_map, events,
+                    self._mode(), run_map,
                 )
-                if latest and not events and latest.events:
+                if latest and latest.events:
                     run.events = latest.events
                 self.history.add(run, map_asset(run_map, self._room_names) if run_map and run.route else None)
-                if events:
-                    self._pending_run_events = []
-                    self._pending_run_end = None
-            elif ids and self._pending_run_events and self._pending_matches(
-                next((r.end for r in self.history.runs if r.id == str(ids[0])), None)
-            ):
-                # A run may have been backfilled before this live observation
-                # finished; enrich that record rather than dropping the events.
-                previous = next((r for r in self.history.runs if r.id == str(ids[0])), None)
-                if previous:
-                    self.history.add(dataclasses.replace(previous, events=self._pending_run_events))
-                    self._pending_run_events = []
-                    self._pending_run_end = None
             self._import_queue = [rid for rid in ids[1:RECENT_RUNS] if not self.history.has(str(rid))
                                   and rid >= time.time() - KEEP_DAYS * 86400]
         if self._import_queue:
@@ -649,60 +661,55 @@ class DeviceController:
         # Notice a newly started run soon enough to capture its later dock events.
         return 30
 
-    def _pending_matches(self, record_end: int | None) -> bool:
-        """Don't attach live events to an older record if Roborock hasn't synced yet."""
-        return bool(
-            record_end is not None and self._pending_run_end is not None
-            and abs(record_end - self._pending_run_end) <= 600
-        )
-
-    def _record_room_event(self, status: dict[str, Any]) -> None:
+    def _record_room_event(self, status: dict[str, Any], room: int | None = None) -> None:
         """Record room transitions from the current room id in the parsed live map."""
-        room = self._map.robot_room if self._map else None
+        if room is None and self._map:
+            room = self._map.robot_room
         if room is None or room <= 0:
             self._run_last_room = None
             return
+        mode = status.get("mode") or {}
         state = status.get("state")
-        if state in {"robot_status_mopping", "segment_mopping", "zoned_mopping", "clean_mop_mopping",
-                     "segment_clean_mop_mopping", "zoned_clean_mop_mopping"}:
-            cleaning_pass = "Mop"
-        elif state in {"clean_mop_cleaning", "segment_clean_mop_cleaning", "zoned_clean_mop_cleaning"}:
-            cleaning_pass = "Vacuum"
-        elif state in {"cleaning", "spot_cleaning", "zoned_cleaning", "segment_cleaning"}:
-            cleaning_pass = None
-        else:
+        if state not in ROOM_PASS:
             return
+        cleaning_pass = ROOM_PASS[state] or {
+            "vacuum": "Vacuum", "mop": "Mop", "vac_and_mop": "Vacuum and mop"
+        }.get(mode.get("cleaning"))
+        # The final record identifies automatic re-mopping. Save the live
+        # transition separately so a time is only offered when both agree.
+        replenish = getattr(self._p.status, "replenish_mode", None)
+        if type(replenish) is int and replenish >= 0:
+            if replenish == 0:
+                self._observed_replenish = False
+            elif cleaning_pass == "Mop":
+                if self._observed_replenish is False:
+                    self.history.observe(int(time.time()), "Replenishment mode observed while mopping")
+                self._observed_replenish = True
         if (room, cleaning_pass) == self._run_last_room:
             return
         names = {**self._room_names, **self._nicknames.get(self.device.duid)}
         name = names.get(room) or f"Room {room}"
-        mode = status.get("mode") or {}
         settings = [cleaning_pass] if cleaning_pass else []
-        for key, title in (("fan", "Suction"), ("water", "Water"), ("mop", "Mop route")):
+        room_codes = self._room_status if self._room_status.get("segment_id") == room else {}
+        for key, title, field in (("fan", "Suction", "fan_power"), ("water", "Water", "water_box_status"),
+                                  ("mop", "Mop route", "mop_mode")):
+            code = room_codes.get(field, mode.get(key))
             value = next((option["name"] for option in mode.get(f"{key}_options", [])
-                          if option["code"] == mode.get(key)), None)
+                          if option["code"] == code), None)
             if value is not None:
                 settings.append(f"{title}: {str(value).replace('_', ' ')}")
-        self._run_events.append({
-            "at": int(time.time()), "label": f"Cleaning {name}", "detail": " · ".join(settings)
-        })
+        if self._p.status.repeat and self._p.status.repeat > 0:
+            settings.append(f"×{self._p.status.repeat}")
+        if self._room_status.get("sequence") == 1:
+            settings.append("Vac followed by Mop")
+        self.history.observe(int(time.time()), f"Cleaning {name}", " · ".join(settings))
         self._run_last_room = (room, cleaning_pass)
 
-    def _record_preparation(self, start: int) -> None:
-        while self._prep_events:
-            at, state = self._prep_events.popleft()
-            if 0 <= start - at <= 90:
-                self._record_run_event({"state": _name(state)}, at)
-                self._run_seen = True
-
     def _record_run_event(self, status: dict[str, Any], at: int | None = None) -> None:
-        """Keep timestamped dock/resume transitions for runs seen while this app is open."""
+        """Persist observed transitions independently of the browser and record sync."""
         state = status.get("state")
         if not isinstance(state, str):
             return
-        if not self._run_seen:
-            self._run_events = []
-            self._run_last_state = None
 
         observed_at = at if at is not None else int(time.time())
         labels = {
@@ -732,15 +739,53 @@ class DeviceController:
         }
         previous = self._run_last_state
         label = labels.get(state)
-        if status.get("phase") == "cleaning" and previous in {
-            "going_to_wash_the_mop", "back_to_dock_washing_duster", "emptying_the_bin",
-            "washing_the_mop", "washing_the_mop_2", "detaching_the_mop", "attaching_the_mop", "paused",
+        if state == previous:
+            return
+        if state in ROOM_PASS:
+            if self._resume_pending:
+                self.history.observe(observed_at, "Resuming cleaning")
+                self._run_last_room = None
+                self._run_map_at = 0.0
+            self._resume_pending = False
+            self._cleaned_in_run = True
+        elif self._cleaned_in_run and state in {
+            "emptying_the_bin", "washing_the_mop", "washing_the_mop_2", "paused",
+            "attaching_the_mop", "detaching_the_mop",
         }:
-            self._run_events.append({"at": observed_at, "label": "Resuming cleaning"})
-            self._run_last_room = None
+            self._resume_pending = True
+
         if label and label != labels.get(previous):
-            self._run_events.append({"at": observed_at, "label": label})
+            row = self.history.observe(observed_at, label)
+            self._dock_event = (row, label) if label in {"Washing mop", "Emptying dustbin"} else None
+        elif label != labels.get(previous):
+            self._dock_event = None
         self._run_last_state = state
+
+    async def _describe_dock_event(self, row: int, label: str) -> None:
+        """Capture the configured dock mode while the action is still underway."""
+        wash = label == "Washing mop"
+        trait = self._p.wash_towel_mode if wash else self._p.dust_collection_mode
+        details = []
+        if trait is not None:
+            try:
+                await asyncio.wait_for(trait.refresh(), timeout=3)
+                value = trait.wash_mode.value if wash and trait.wash_mode else _name(getattr(trait, "mode", None))
+                if value and value != "unknown":
+                    details.append(value.replace("_", " ").capitalize())
+            except Exception as err:
+                _LOGGER.debug("Dock mode unavailable for %s: %s", label, err)
+        if wash and _flag(self._p.device_features, "is_hot_wash_towel_supported"):
+            try:
+                raw = await asyncio.wait_for(self._p.command.send(RoborockCommand.GET_WASH_WATER_TEMPERATURE, {}), 3)
+                value = raw[0] if isinstance(raw, list) and raw else raw
+                if isinstance(value, dict):
+                    value = value.get("wash_water_temperature")
+                    if type(value) is int and value in (0, 1, 2):
+                        details.append(("Normal Water", "Warm Water", "Hot Water")[value])
+            except Exception as err:
+                _LOGGER.debug("Wash temperature setting unavailable: %s", err)
+        if details:
+            self.history.describe_observation(row, "Dock setting: " + " | ".join(details))
 
     async def _backfill(self, rid: int) -> None:
         previous = next((item for item in self.history.runs if item.id == str(rid)), None)
@@ -823,6 +868,8 @@ class DeviceController:
                 value = record.get(key)
                 if type(value) is int and value >= 0:
                     details[key] = value / 1_000_000
+            if type(record.get("manual_replenish")) is int:
+                details["manual_replenish"] = record["manual_replenish"]
             if record.get("clean_type") == 3:
                 details["rooms"] = True
         current = next((item for item in self.history.runs if item.id == run_id), None)

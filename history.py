@@ -12,6 +12,7 @@ import io
 import json
 import logging
 import os
+import sqlite3
 import statistics
 import time
 import zlib
@@ -139,6 +140,16 @@ class History:
 
     def __init__(self, path: Path | None) -> None:
         self._path = path
+        if path:
+            path.parent.mkdir(parents=True, exist_ok=True)
+        # Keep transitions separately: persisting a two-second dock action
+        # should not require rewriting every historical floorplan.
+        self._observations = sqlite3.connect(path.with_suffix(".sqlite3") if path else ":memory:")
+        self._observations.execute(
+            "CREATE TABLE IF NOT EXISTS events "
+            "(id INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER NOT NULL, label TEXT NOT NULL, detail TEXT)"
+        )
+        self._observations.execute("CREATE INDEX IF NOT EXISTS event_time ON events(at)")
         self.runs: list[Run] = []
         self.maps: dict[str, dict[str, Any]] = {}
         self.intervals: dict[str, int] = {}
@@ -165,12 +176,38 @@ class History:
     def has(self, run_id: str) -> bool:
         return any(r.id == run_id for r in self.runs)
 
+    def observe(self, at: int, label: str, detail: str | None = None) -> int:
+        with self._observations as db:
+            db.execute("DELETE FROM events WHERE at < ?", (int(time.time()) - KEEP_DAYS * 86400,))
+            row = db.execute("INSERT INTO events (at, label, detail) VALUES (?, ?, ?)", (at, label, detail))
+        return row.lastrowid
+
+    def describe_observation(self, row_id: int, detail: str) -> None:
+        with self._observations as db:
+            db.execute("UPDATE events SET detail = ? WHERE rowid = ?", (detail, row_id))
+
+    def _events_for(self, run: Run) -> list[dict[str, Any]]:
+        # Use the robot's own session boundaries, even if records arrive late,
+        # out of order or after the server restarts. Preserve same-second order.
+        events = list(run.events or [])
+        for at, label, detail in self._observations.execute(
+            "SELECT at, label, detail FROM events WHERE at >= ? AND at < ? ORDER BY at, rowid",
+            (run.begin, run.end),
+        ):
+            event = {"at": at, "label": label}
+            if detail is not None:
+                event["detail"] = detail
+            events.append(event)
+        return sorted(events, key=lambda event: event["at"])
+
     def remove(self, run_id: str) -> bool:
         """Remove one run and any map asset no remaining run references."""
-        before = len(self.runs)
-        self.runs = [run for run in self.runs if run.id != run_id]
-        if len(self.runs) == before:
+        removed = next((run for run in self.runs if run.id == run_id), None)
+        if removed is None:
             return False
+        with self._observations as db:
+            db.execute("DELETE FROM events WHERE at >= ? AND at < ?", (removed.begin, removed.end))
+        self.runs = [run for run in self.runs if run.id != run_id]
         refs = {str(run.route.get("map")) for run in self.runs if run.route and run.route.get("map")}
         self.maps = {key: value for key, value in self.maps.items() if key in refs}
         self._changed()
@@ -204,7 +241,7 @@ class History:
             "avoid_count": run.avoid_count, "wash_count": run.wash_count,
             "dust_collected": run.dust_collected,
             "record_details": run.record_details,
-            "events": run.events or [],
+            "events": self._events_for(run),
             "route": route, "map": asset,
         }
 
