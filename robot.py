@@ -743,7 +743,7 @@ class DeviceController:
             raw = await _send_history_command(
                 self._p.map_content.rpc_channel,
                 RoborockCommand.GET_CLEAN_RECORD_MAP,
-                [rid],
+                {"start_time": rid},
                 timeout=25,
             )
             rendered = await asyncio.to_thread(self._renderer.render, raw) if isinstance(raw, bytes) else None
@@ -819,7 +819,7 @@ class DeviceController:
         record_map, map_transport_events, map_error = await _probe_history_map(
             self._p.map_content.rpc_channel,
             RoborockCommand.GET_CLEAN_RECORD_MAP,
-            [record_id],
+            {"start_time": record_id},
             timeout=12,
         )
         if map_error:
@@ -1342,7 +1342,7 @@ def _launching_app() -> str:
 
 
 async def _send_history_command(
-    channel: Any, method: RoborockCommand | str, params: list[Any], timeout: float = HISTORY_COMMAND_TIMEOUT
+    channel: Any, method: RoborockCommand | str, params: list[Any] | dict[str, Any], timeout: float = HISTORY_COMMAND_TIMEOUT
 ) -> Any:
     """Give large historical records more time than python-roborock's RPC default."""
     # python-roborock currently hardcodes a 10-second timeout inside its RPC
@@ -1364,7 +1364,7 @@ async def _send_history_command(
 
 
 async def _probe_history_map(
-    channel: Any, method: str, params: list[Any], timeout: float
+    channel: Any, method: str, params: dict[str, Any], timeout: float
 ) -> tuple[Any, list[dict[str, Any]], dict[str, Any] | None]:
     """Probe a map command and observe its MQTT frames without saving payloads."""
     events: list[dict[str, Any]] = []
