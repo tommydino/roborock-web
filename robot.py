@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import copy
+from collections import deque
 import dataclasses
 import errno
 import hashlib
@@ -221,6 +222,9 @@ class DeviceController:
         self._nicknames = nicknames or RoomNames(None)
         self.history = history or History(None)
         self._fresh: tuple[tuple, dict[str, Any]] | None = None
+        self._state_updates: deque[tuple[int, Any]] = deque(maxlen=512)
+        self._state_changed = asyncio.Event()
+        self._prep_events: deque[tuple[int, Any]] = deque(maxlen=12)
         self._run_seen = False  # a run was going on at the last history check
         self._run_events: list[dict[str, Any]] = []
         self._pending_run_events: list[dict[str, Any]] = []
@@ -448,16 +452,42 @@ class DeviceController:
         # Get a head start for the first page load: the saved map now, a fresh one soon.
         await self._load_saved_map()
         self._refresh_soon()
-        while True:
-            delay = 300.0
-            try:
-                await self._ensure_local()
-                delay = await self._history_tick()
-            except asyncio.CancelledError:
-                raise
-            except Exception as err:  # noqa: BLE001 - try again later
-                _LOGGER.info("Couldn't update the cleaning history: %s", err)
-            await asyncio.sleep(delay)
+        channel = getattr(self.device, "_channel", None)
+        listen = getattr(channel, "add_dps_listener", None)
+        unsubscribe = listen(self._history_push) if callable(listen) else None
+        try:
+            while True:
+                self._state_changed.clear()
+                delay = 30.0
+                try:
+                    await self._ensure_local()
+                    delay = await self._history_tick()
+                except asyncio.CancelledError:
+                    raise
+                except Exception as err:
+                    _LOGGER.info("Couldn't update the cleaning history: %s", err)
+                try:
+                    await asyncio.wait_for(self._state_changed.wait(), timeout=delay)
+                except TimeoutError:
+                    pass
+        finally:
+            if unsubscribe:
+                unsubscribe()
+
+    def _history_push(self, values: dict) -> None:
+        # V1 data point 121 is the robot's current state. Other updates such
+        # as battery changes must not trigger extra history polls.
+        value = values.get(121)
+        if value is None:
+            return
+        try:
+            state = S(value)
+        except (ValueError, TypeError):
+            return
+        if self._state_updates and self._state_updates[-1][1] == state:
+            return
+        self._state_updates.append((int(time.time()), state))
+        self._state_changed.set()
 
     # ---------- the direct link ----------
 
@@ -525,6 +555,21 @@ class DeviceController:
     async def _history_tick(self) -> float:
         """One look at the robot. Returns how long to wait before the next."""
         st = await self.status()
+        latest_push = None
+        while self._state_updates:
+            at, state = self._state_updates.popleft()
+            latest_push = state
+            if not self._run_seen and state in {S.detaching_the_mop, S.attaching_the_mop}:
+                self._prep_events.append((at, state))
+            if self._run_seen or state in CLEANING_STATES:
+                if not self._run_seen:
+                    self._record_preparation(at)
+                self._record_run_event({"state": _name(state), "phase": "cleaning" if state in CLEANING_STATES else None}, at)
+                self._run_seen = True
+        # The status cache may still describe the previous phase for two
+        # seconds after a push. Wait for a fresh poll before closing a run.
+        if latest_push is not None and st.get("state") != _name(latest_push):
+            return 2
         if st.get("state") is None:
             return 120  # can't reach it
         active = st.get("job") or st.get("phase") in ("cleaning", "returning", "paused")
@@ -532,6 +577,8 @@ class DeviceController:
         # already seen that run start. This avoids recording routine dock work.
         active = active or (self._run_seen and st.get("phase") == "dock")
         if active:
+            if not self._run_seen:
+                self._record_preparation(int(time.time()))
             self._record_run_event(st)
             self._run_seen = True
             if st.get("phase") == "cleaning" and time.monotonic() - self._run_map_at >= 20:
@@ -558,10 +605,14 @@ class DeviceController:
             ids = sorted({int(i) for i in summary.records or []}, reverse=True)
             if ids and not self.history.has(str(ids[0])) and summary.last_clean_record:
                 # The map keeps showing the last run's path until the next one starts.
-                async with self._map_lock:
-                    await self._refresh_map()
-                grid = grid_from_map(self._map) if self._map else None
-                run_map = self._map
+                run_map = None
+                try:
+                    async with self._map_lock:
+                        await self._refresh_map()
+                        run_map = self._map
+                except Exception as err:
+                    _LOGGER.info("Saving run events without a fresh map: %s", err)
+                grid = grid_from_map(run_map) if run_map else None
                 events = self._pending_run_events if self._pending_matches(summary.last_clean_record.end) else None
                 run = _run(
                     ids[0], summary.last_clean_record, grid, "live", self._p.status.current_map,
@@ -618,7 +669,14 @@ class DeviceController:
         })
         self._run_last_room = room
 
-    def _record_run_event(self, status: dict[str, Any]) -> None:
+    def _record_preparation(self, start: int) -> None:
+        while self._prep_events:
+            at, state = self._prep_events.popleft()
+            if 0 <= start - at <= 90:
+                self._record_run_event({"state": _name(state)}, at)
+                self._run_seen = True
+
+    def _record_run_event(self, status: dict[str, Any], at: int | None = None) -> None:
         """Keep timestamped dock/resume transitions for runs seen while this app is open."""
         state = status.get("state")
         if not isinstance(state, str):
@@ -627,7 +685,10 @@ class DeviceController:
             self._run_events = []
             self._run_last_state = None
 
+        observed_at = at if at is not None else int(time.time())
         labels = {
+            "starting": "Starting cleaning",
+            "spot_cleaning": "Spot cleaning",
             "going_to_wash_the_mop": "Returning to dock to wash mop",
             "back_to_dock_washing_duster": "Returning to dock to wash mop",
             "emptying_the_bin": "Emptying dustbin",
@@ -656,10 +717,10 @@ class DeviceController:
             "going_to_wash_the_mop", "back_to_dock_washing_duster", "emptying_the_bin",
             "washing_the_mop", "washing_the_mop_2", "detaching_the_mop", "attaching_the_mop", "paused",
         }:
-            self._run_events.append({"at": int(time.time()), "label": "Resuming cleaning"})
+            self._run_events.append({"at": observed_at, "label": "Resuming cleaning"})
             self._run_last_room = None
         if label and label != labels.get(previous):
-            self._run_events.append({"at": int(time.time()), "label": label})
+            self._run_events.append({"at": observed_at, "label": label})
         self._run_last_state = state
 
     async def _backfill(self, rid: int) -> None:
