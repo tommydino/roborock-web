@@ -62,6 +62,16 @@ class RecordTimelineTest(unittest.TestCase):
         self.assertEqual(rows[7]["clean"], {"mode": "Mop", "clean_mode": 105,
                          "water_mode": 202, "mop_mode": 301, "repeat_count": 1,
                          "mop_type": 2, "mop_power": 15})
+        history = History(None)
+        now = int(time.time())
+        history.add(Run("summary", now - 1620, now, duration=900, complete=True,
+                        wash_count=2, dust_collected=True, device_events=first + second))
+        summary = history.list()[0]
+        self.assertEqual(summary["empty_count"], 1)
+        self.assertTrue(summary["remopped"])
+        self.assertEqual(summary["wash_count"], 2)
+        self.assertTrue(summary["dust_collected"])
+        history._observations.close()
 
     def test_incomplete_or_repeated_page_is_not_cached_as_complete(self):
         channel = AsyncMock()
