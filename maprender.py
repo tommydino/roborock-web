@@ -278,6 +278,17 @@ OBSTACLE_KINDS = {
 }
 
 
+def obstacle_kind(description: str | None) -> tuple[str, str]:
+    """Return a useful map label even when the robot omitted the AI class."""
+    raw = (description or "").strip()
+    key = raw.casefold()
+    if key in OBSTACLE_KINDS:
+        return OBSTACLE_KINDS[key]
+    if raw and key not in {"?", "unknown", "none", "null"}:
+        return "obstacle", raw.replace("_", " ").capitalize()
+    return "obstacle", "Unidentified obstacle – Roborock did not report its type"
+
+
 def _things(map_data: MapData) -> dict[str, Any]:
     """Everything worth drawing on top of the floor, in base-image pixels."""
     assert map_data.image is not None
@@ -308,7 +319,7 @@ def _things(map_data: MapData) -> dict[str, Any]:
         if key in seen:
             continue
         seen.add(key)
-        kind, label = OBSTACLE_KINDS.get(o.details.description or "", ("obstacle", "Obstacle"))
+        kind, label = obstacle_kind(o.details.description)
         obstacles.append({"x": q[0], "y": q[1], "kind": kind, "label": label, "photo": bool(o.details.photo_name)})
 
     def area(a: Any) -> list[list[float]]:
