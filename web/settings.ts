@@ -19,6 +19,9 @@ let fetchingHistoryMap = false;
 let selectedRunId: string | null = null;
 let selectedRun: RunDetail | null = null;
 let runHistoryLoading = true;
+let historyResultFilter: "all" | "completed" | "incomplete" = "all";
+let historyTypeFilter: "all" | "vacuum" | "mopped" | "remopped" = "all";
+let historySort: "newest" | "oldest" | "longest" | "largest" = "newest";
 let routeProgress = 0;
 let routeTimer: number | null = null;
 let routeSpeed = 1;
@@ -192,6 +195,8 @@ function runDetailHtml(): string {
   const run = selectedRun;
   const clock = (ts: number) => new Date(ts * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
   const duration = run.duration ?? Math.max(0, run.end - run.begin);
+  const elapsed = Math.max(0, run.end - run.begin);
+  const overhead = Math.max(0, elapsed - duration);
   const result = run.complete === true ? "Completed" : run.complete === false ? "Stopped before completion" : "Result not reported";
   const mode = run.mode?.replaceAll("_", " ") ?? null;
   const startType = run.start_type?.replaceAll("_", " ") ?? null;
@@ -216,6 +221,13 @@ function runDetailHtml(): string {
     .filter((x): x is string => !!x).map((x) => `<span>${esc(x)}</span>`).join("");
   return `<section class="run-detail">
     <div class="history-head"><b>${esc(fmtWhen(run.begin))}</b><button class="btn-soft" data-run-close>Close</button></div>
+    <div class="run-time-breakdown">
+      <span><strong>${esc(fmtDuration(duration))}</strong><small>Cleaning time</small></span>
+      <span><strong>${esc(fmtDuration(elapsed))}</strong><small>Total elapsed</small></span>
+      <span><strong>${esc(fmtDuration(overhead))}</strong><small>Dock &amp; other</small></span>
+      <span><strong>${esc(area)}</strong><small>Cleaning area</small></span>
+    </div>
+    ${overhead > 0 ? `<p class="run-time-note">Total elapsed also includes travel, mop washing, emptying and other dock activity.</p>` : ""}
     <div class="run-stats">${stats}<span>${esc(result)}</span></div>
     ${run.route && run.map ? `${routeSvg(run)}
       <div class="replay-controls">
@@ -353,14 +365,39 @@ function renderRunHistory(): void {
   if (!list || !detail) return;
   list.hidden = selectedRunId !== null;
   detail.hidden = selectedRunId === null;
+  const filteredRuns = runHistory.filter((run) => {
+    if (historyResultFilter === "completed" && run.complete !== true) return false;
+    if (historyResultFilter === "incomplete" && run.complete !== false) return false;
+    if (historyTypeFilter === "vacuum" && run.mopped) return false;
+    if (historyTypeFilter === "mopped" && !run.mopped) return false;
+    if (historyTypeFilter === "remopped" && !run.remopped) return false;
+    return true;
+  }).sort((a, b) => {
+    if (historySort === "oldest") return a.begin - b.begin;
+    if (historySort === "longest") return (b.duration ?? 0) - (a.duration ?? 0);
+    if (historySort === "largest") return (b.area ?? 0) - (a.area ?? 0);
+    return b.begin - a.begin;
+  });
   list.innerHTML = selectedRunId ? "" : runHistory.length
-    ? `<div class="history-runs-label">Recent runs</div><ul class="history-runs-list">${runHistory.map((run) => {
+    ? `<div class="history-runs-head"><div class="history-runs-label">Recent runs <small>${filteredRuns.length} of ${runHistory.length}</small></div>
+      <div class="history-run-filters">
+        <label>Result<select data-history-result><option value="all"${historyResultFilter === "all" ? " selected" : ""}>All</option><option value="completed"${historyResultFilter === "completed" ? " selected" : ""}>Completed</option><option value="incomplete"${historyResultFilter === "incomplete" ? " selected" : ""}>Stopped</option></select></label>
+        <label>Cleaning<select data-history-type><option value="all"${historyTypeFilter === "all" ? " selected" : ""}>All</option><option value="vacuum"${historyTypeFilter === "vacuum" ? " selected" : ""}>Vacuum only</option><option value="mopped"${historyTypeFilter === "mopped" ? " selected" : ""}>Mopped</option><option value="remopped"${historyTypeFilter === "remopped" ? " selected" : ""}>Re-mopped</option></select></label>
+        <label>Sort<select data-history-sort><option value="newest"${historySort === "newest" ? " selected" : ""}>Newest</option><option value="oldest"${historySort === "oldest" ? " selected" : ""}>Oldest</option><option value="longest"${historySort === "longest" ? " selected" : ""}>Longest</option><option value="largest"${historySort === "largest" ? " selected" : ""}>Largest area</option></select></label>
+      </div></div>${filteredRuns.length ? `<ul class="history-runs-list">${filteredRuns.map((run) => {
       const mode = run.mode?.replaceAll("_", " ");
+      const badges = [
+        run.complete === false ? "Stopped" : null,
+        run.remopped ? "Re-mopped" : run.mopped ? "Mopped" : "Vacuum",
+        run.empty_count ? `Emptied ×${run.empty_count}` : run.dust_collected ? "Dust collected" : null,
+        run.wash_count ? `Mop wash ×${run.wash_count}` : null,
+      ].filter((value): value is string => !!value);
       return `<li class="history-run-item"><button class="run-open" data-run="${esc(run.id)}"><span class="run-when">${esc(fmtWhen(run.begin))}</span>
         <span class="run-what">${fmtDuration(run.duration)} · ${fmtArea(run.area)}${mode ? ` · ${esc(mode)}` : ""}${run.mopped ? " · mopped" : ""}</span>
+        <span class="run-badges">${badges.map(badge => `<i>${esc(badge)}</i>`).join("")}</span>
         <span class="run-route-note">${run.mapped ? "Route available · open replay" : run.source !== "demo" ? "Open to load route map" : "Summary only"}</span></button>
         <button class="run-delete" data-run-delete="${esc(run.id)}" aria-label="Delete cleaning run" title="Delete run">${icon("trash")}</button></li>`;
-    }).join("")}</ul>`
+    }).join("")}</ul>` : `<p class="muted history-filter-empty">No runs match these filters.</p>`}`
     : `<p class="muted">${runHistoryLoading ? "Loading run history…" : "No recent runs available."}</p>`;
   detail.innerHTML = runDetailHtml();
   syncRouteProgress();
@@ -429,6 +466,21 @@ async function openHistoryRun(id: string): Promise<void> {
 const settingsRoot = $("#settings");
 settingsRoot.addEventListener("change", async (event) => {
   const input = event.target;
+  if (input instanceof HTMLSelectElement && input.matches("[data-history-result]")) {
+    historyResultFilter = input.value as typeof historyResultFilter;
+    renderRunHistory();
+    return;
+  }
+  if (input instanceof HTMLSelectElement && input.matches("[data-history-type]")) {
+    historyTypeFilter = input.value as typeof historyTypeFilter;
+    renderRunHistory();
+    return;
+  }
+  if (input instanceof HTMLSelectElement && input.matches("[data-history-sort]")) {
+    historySort = input.value as typeof historySort;
+    renderRunHistory();
+    return;
+  }
   if (!(input instanceof HTMLInputElement) || !input.matches("[data-import-timeline]") || !selectedRun) return;
   const file = input.files?.[0];
   if (!file) return;
