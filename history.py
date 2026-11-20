@@ -256,12 +256,17 @@ class History:
         result = []
         for run in reversed(self.runs[-RECENT_RUNS:]):
             route = run.route
+            timeline = timeline_rows(run.device_events, {}) if run.device_events else []
+            empty_count = sum(row.get("label") == "Auto Emptying" for row in timeline)
+            remopped = any(row.get("label") == "Automatic Re-Mopping" for row in timeline)
             result.append({
                 "id": run.id, "begin": run.begin, "end": run.end, "duration": run.duration,
                 "area": (run.record_details or {}).get("cleaned_area", run.area), "complete": run.complete, "source": run.source,
                 "mapped": bool(route and self.maps.get(str(route.get("map")))),
                 "mopped": bool((route and route.get("mop_path")) or (run.grid and run.grid.mop)),
-                "rooms": [], "mode": run.mode,
+                "rooms": [], "mode": run.mode, "wash_count": run.wash_count,
+                "dust_collected": run.dust_collected, "empty_count": empty_count,
+                "avoid_count": run.avoid_count, "remopped": remopped,
             })
         return result
 
