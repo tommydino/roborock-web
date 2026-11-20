@@ -78,6 +78,31 @@ def cleaning_plan(fields):
     return details
 
 
+def clean_settings(fields):
+    """Decode the room-cleaning tuple used by Roborock's Android timeline.
+
+    The model plug-in's getCleanInfoData reads e[3], e[4], e[5], e[6],
+    e[9] and e[11]. Keep both the normalized values and the model-specific
+    mop fields so the web UI does not have to guess them from the route.
+    """
+    fan = attribute(fields, 3)
+    water = attribute(fields, 4)
+    mop = attribute(fields, 5)
+    repeat = attribute(fields, 6)
+    mop_type = attribute(fields, 9)
+    mop_power = attribute(fields, 11)
+    mode = "Vacuum" if water == 0 else "Mop" if fan == 5 else "Vacuum & Mop"
+    return {
+        "mode": mode,
+        "clean_mode": fan + 100 if fan is not None else None,
+        "water_mode": water + 200 if water is not None else None,
+        "mop_mode": mop + 300 if mop is not None else None,
+        "repeat_count": repeat,
+        "mop_type": mop_type,
+        "mop_power": mop_power,
+    }
+
+
 def timeline_rows(events, rooms):
     rows = []
     replenish = None
@@ -89,6 +114,7 @@ def timeline_rows(events, rooms):
         fields = event.get("e")
         label = None
         detail = []
+        clean = None
         if code == 25:
             label = {1: "Start full cleaning", 2: "Start zone cleaning", 3: "Start selective room cleaning",
                      11: "Start combined cleaning"}.get(
@@ -117,12 +143,9 @@ def timeline_rows(events, rooms):
             segment = attribute(fields, 2)
             if segment is not None and 1 <= segment <= 31:
                 label = "Clean " + (rooms.get(segment) or f"Room {segment}")
-                fan, water = attribute(fields, 3), attribute(fields, 4)
-                if water == 0:
-                    detail.append("Vacuum")
-                elif fan == 5:
-                    detail.append("Mop")
-                passes = attribute(fields, 6)
+                clean = clean_settings(fields)
+                detail.append(clean["mode"])
+                passes = clean["repeat_count"]
                 if passes is not None and passes > 0:
                     detail.append(f"×{passes}")
             elif segment is not None and 35 <= segment <= 50:
@@ -138,5 +161,8 @@ def timeline_rows(events, rooms):
                     label = "Automatic Re-Mopping"
                     detail.append("A dirty area is detected, robot returns to the dock for mop washing and mops this area again.")
         if label:
-            rows.append({"at": at, "label": label, "detail": " · ".join(filter(None, detail))})
+            row = {"at": at, "label": label, "detail": " · ".join(filter(None, detail))}
+            if clean is not None:
+                row["clean"] = clean
+            rows.append(row)
     return rows

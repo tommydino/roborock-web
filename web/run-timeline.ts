@@ -7,6 +7,7 @@ export interface TimelineStep {
   label: string;
   detail?: string;
   approximate?: boolean;
+  clean?: NonNullable<RunDetail["device_timeline"]>[number]["clean"];
 }
 
 const dockLabels: Record<string, string> = {

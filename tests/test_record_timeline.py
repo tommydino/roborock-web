@@ -22,7 +22,7 @@ class RecordTimelineTest(unittest.TestCase):
         first = [
             event(0, 25, **{"252": 3, "8": 1, "254": [0, 0, 1]}),
             event(1, 56, **{"7": 1}),
-            event(120, 42, **{"2": 16, "3": 2, "4": 0, "6": 1}),
+            event(120, 42, **{"2": 16, "3": 2, "4": 0, "5": 0, "6": 1}),
             event(360, 54, **{"541": 2}),
             event(420, 55, **{"7": 1}),
             event(420, 52),
@@ -30,7 +30,7 @@ class RecordTimelineTest(unittest.TestCase):
         second = [
             first[-1],
             event(600, 13, **{"131": 1}),
-            event(600, 42, **{"2": 16, "3": 5, "4": 2, "6": 1}),
+            event(600, 42, **{"2": 16, "3": 5, "4": 2, "5": 1, "6": 1, "9": 2, "11": 15}),
             event(1020, 52, **{"521": 2, "522": 1}),
             event(1440, 61, **{"611": 3}),
             event(1440, 42, **{"2": 36}),
@@ -54,6 +54,12 @@ class RecordTimelineTest(unittest.TestCase):
         self.assertEqual([rows[i]["detail"] for i in [2, 3, 7, 8]],
                          ["Vacuum · ×1", "Balanced", "Mop · ×1", "Deep · Warm Water"])
         self.assertEqual(rows[4]["at"], rows[5]["at"])
+        self.assertEqual(rows[2]["clean"], {"mode": "Vacuum", "clean_mode": 102,
+                         "water_mode": 200, "mop_mode": 300, "repeat_count": 1,
+                         "mop_type": None, "mop_power": None})
+        self.assertEqual(rows[7]["clean"], {"mode": "Mop", "clean_mode": 105,
+                         "water_mode": 202, "mop_mode": 301, "repeat_count": 1,
+                         "mop_type": 2, "mop_power": 15})
 
     def test_incomplete_or_repeated_page_is_not_cached_as_complete(self):
         channel = AsyncMock()

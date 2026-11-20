@@ -10,7 +10,7 @@ import { blockedNote, doAction, setSmartPlanShown, smartPlanShown } from "./pane
 import { S } from "./state";
 import { notifyEnabled, notifySupported, setNotify } from "./notify";
 import { themeChoice } from "./theme";
-import type { Choice, RunDetail, RunSummary, Settings } from "./types";
+import type { Choice, DeviceTimelineStep, RunDetail, RunSummary, Settings } from "./types";
 
 let runHistory: RunSummary[] = [];
 let historyRequest = 0;
@@ -137,7 +137,21 @@ function readAppTimeline(id: string): { text: string; transcript?: AppTimeline }
   } catch { return { text: "" }; }
 }
 
-function timelineRow(time: string, label: string, details: string[], major: boolean, fromApp: boolean): string {
+function cleanInfo(clean: DeviceTimelineStep["clean"]): string {
+  if (!clean) return "";
+  const cells: string[] = [];
+  if (clean.clean_mode != null) cells.push(`<span title="Suction mode ${clean.clean_mode}">${icon("fan")}</span>`);
+  if (clean.mode !== "Vacuum" && clean.water_mode != null) {
+    cells.push(`<span title="Water mode ${clean.water_mode}">${icon("drop")}${clean.mop_power != null ? `<em>${clean.mop_power}</em>` : ""}</span>`);
+  }
+  if (clean.mop_mode != null || clean.mop_type != null) {
+    cells.push(`<span title="Mop mode ${clean.mop_mode ?? ""}${clean.mop_type != null ? `, mop type ${clean.mop_type}` : ""}">${icon("sliders")}</span>`);
+  }
+  if (clean.repeat_count != null) cells.push(`<span>×${clean.repeat_count}</span>`);
+  return cells.join('<i aria-hidden="true"></i>');
+}
+
+function timelineRow(time: string, label: string, details: string[], major: boolean, fromApp: boolean, clean?: DeviceTimelineStep["clean"]): string {
   const clock = `<time>${esc(time)}</time>`;
   let body = "";
   if (details.length) {
@@ -146,9 +160,9 @@ function timelineRow(time: string, label: string, details: string[], major: bool
     else if (label.startsWith("Start ")) body = `<ul class="rr-detail rr-plan">${lines.map(d => `<li>${d}</li>`).join("")}</ul>`;
     else if (fromApp && label === "Automatic Re-Mopping") body = `<div class="rr-detail rr-ai"><b>AI</b><div>${lines.join(" · ")}</div></div>`;
     else {
-      const modeIcon = details[0] === "Vacuum" ? "fan" : details[0] === "Mop" ? "drop" : null;
-      const options = lines.slice(1).join(" | ");
-      body = `<div class="rr-detail"><div>${lines[0]}</div>${modeIcon || options ? `<small class="rr-options">${modeIcon ? icon(modeIcon) : ""}${modeIcon && options ? " | " : ""}${options}</small>` : ""}</div>`;
+      const modeIcon = details[0] === "Vacuum" ? "fan" : details[0].includes("Mop") ? "drop" : null;
+      const options = clean ? cleanInfo(clean) : lines.slice(1).join(" | ");
+      body = `<div class="rr-detail"><div>${lines[0]}</div>${modeIcon || options ? `<small class="rr-options">${clean ? options : `${modeIcon ? icon(modeIcon) : ""}${modeIcon && options ? " | " : ""}${options}`}</small>` : ""}</div>`;
     }
   }
   return `<li class="rr-step ${major ? "rr-major" : "rr-minor"}">
@@ -221,7 +235,7 @@ function runDetailHtml(): string {
       <div class="rr-scroll" tabindex="0" role="region" aria-label="Cleaning timeline"><ol>${useTranscript ? appTimelineRows(appTimeline) : timeline.flatMap(event => {
         if (event.at === null) return [];
         const time = (event.approximate ? "≈ " : "") + clock(event.at);
-        return timelineRow(time, event.label, event.detail ? event.detail.split(" · ") : [], isMilestone(event.label), !!run.device_timeline?.length);
+        return timelineRow(time, event.label, event.detail ? event.detail.split(" · ") : [], isMilestone(event.label), !!run.device_timeline?.length, event.clean);
       }).join("")}</ol>
       ${!useTranscript && untimed.length ? `<section class="rr-untimed"><strong>Reported without a time</strong><ul>${untimed.map(event =>
         `<li>${esc(event.label)}${event.detail ? ` · ${esc(event.detail)}` : ""}</li>`

@@ -218,7 +218,7 @@ export interface RunSummary {
 
 export interface RunDetail {
   needs_timeline?: boolean;
-  device_timeline?: { at: number; label: string; detail?: string }[] | null;
+  device_timeline?: DeviceTimelineStep[] | null;
   id: string;
   begin: number;
   end: number;
@@ -242,6 +242,21 @@ export interface RunDetail {
     rooms?: Array<{ id: number; name: string; x: number; y: number; area?: number }>;
     charger?: { x: number; y: number } | null;
   } | null;
+}
+
+export interface DeviceTimelineStep {
+  at: number;
+  label: string;
+  detail?: string;
+  clean?: {
+    mode: string;
+    clean_mode: number | null;
+    water_mode: number | null;
+    mop_mode: number | null;
+    repeat_count: number | null;
+    mop_type: number | null;
+    mop_power: number | null;
+  };
 }
 
 export interface Freshness {
