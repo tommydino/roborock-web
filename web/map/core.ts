@@ -6,6 +6,7 @@ import { doAction, renderActions, renderStatus } from "../panels";
 import { freshLabel, freshMapChanged } from "../freshness";
 import { pollMap } from "../session";
 import { S, type Tool } from "../state";
+import { presets } from "../presets";
 import type { MapPayload, MapResponse, MapSnapshot, Mask, Point } from "../types";
 import { copyRestrictions, editRoomClick, endEdit, renderEditFoot, renderShapes, syncInnerClasses } from "./editor";
 import { drawSvg, inner, mapImg, selCanvas, shapesSvg } from "./elements";
@@ -316,18 +317,24 @@ export function renderMapFoot(): void {
   const areaOf = (ids: number[]) => fmtArea(m.rooms.filter((r) => ids.includes(r.id)).reduce((sum, r) => sum + (r.area || 0), 0));
   let html: string;
   if (S.tool === "rooms") {
+    const plans = presets().plans;
     html = S.selected.length
-      ? `<span class="hint"><b style="color:var(--text)">${S.selected.map((id) => esc(names.get(id))).join(", ")}</b>${plan ? ` · ${areaOf(S.selected)}` : ""}</span><button class="link" data-act="clear-sel">Clear</button>`
+      ? `<span class="hint"><b style="color:var(--text)">${S.selected.map((id) => esc(names.get(id))).join(", ")}</b>${plan ? ` · ${areaOf(S.selected)}` : ""}</span><button class="link" data-act="save-plan">Save plan</button><button class="link" data-act="clear-sel">Clear</button>`
+      : plans.length
+        ? `<span class="hint">Saved plans</span><span class="saved-picks">${plans.map((p) => `<button class="chip-button" data-saved-plan="${esc(p.id)}">${esc(p.name)}</button>`).join("")}</span>`
       : S.viewMode === "3d"
         ? `<span class="hint">Drag to turn, swipe with two fingers to move, pinch to zoom. Click rooms to clean just those.</span>`
         : plan
           ? `<span class="hint">Floor area ${areaOf(m.rooms.map((r) => r.id))} across ${m.rooms.length} rooms. Click rooms to clean just those.</span>`
           : `<span class="hint">Tap rooms to clean just those, or clean everywhere.</span>`;
   } else if (S.tool === "zone") {
+    const zones = presets().zones;
     if (S.zone) {
       const size = (v: number) => ((Math.abs(v) / m.scale) * 0.05).toFixed(1);
-      html = `<span class="hint">Zone · ${size(S.zone[2] - S.zone[0])} × ${size(S.zone[3] - S.zone[1])} m</span><button class="link" data-act="clear-sel">Clear</button>`;
-    } else html = `<span class="hint">Drag on the map to draw a zone.</span>`;
+      html = `<span class="hint">Zone · ${size(S.zone[2] - S.zone[0])} × ${size(S.zone[3] - S.zone[1])} m</span><button class="link" data-act="save-zone">Save zone</button><button class="link" data-act="clear-sel">Clear</button>`;
+    } else html = zones.length
+      ? `<span class="hint">Draw a zone or choose a saved one</span><span class="saved-picks">${zones.map((z) => `<button class="chip-button" data-saved-zone="${esc(z.id)}">${esc(z.name)}</button>`).join("")}</span>`
+      : `<span class="hint">Drag on the map to draw a zone.</span>`;
   } else {
     html = S.pin
       ? `<span class="hint">The robot will drive to the pin.</span><button class="link" data-act="clear-sel">Clear</button>`

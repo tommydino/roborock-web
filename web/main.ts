@@ -1,7 +1,7 @@
 // Entry point: global button handling and start-up.
 
 import { $, $$, $opt, closest, icon } from "./dom";
-import { clearMapHistory, closeMapHistory, compareMapSnapshots, mapEmpty, previewMapSnapshot, refreshMapOverlays, showMapHistory } from "./map/core";
+import { clearMapHistory, closeMapHistory, compareMapSnapshots, mapEmpty, previewMapSnapshot, refreshMapOverlays, setTool, showMapHistory } from "./map/core";
 import { fitMap } from "./map/fit";
 import {
   clearEditPicks, deleteSelected, discardEdits, endEdit, mergeRooms, renameRoom, saveRestrictions,
@@ -14,6 +14,7 @@ import { doAction, renderActions, renderSkeletons, renderStatus, setHomePasses, 
 import { logout, reconnect, refreshAuth, startLoops } from "./session";
 import { loadSettings, setChoice } from "./settings";
 import { S, type EditTool, type ViewMode } from "./state";
+import { deletePreset, presets, restoreZone, savePlan, saveZone } from "./presets";
 import "./theme";
 
 // Bring the robot into view, wherever it is: switch to Home, then center on it.
@@ -69,6 +70,29 @@ document.addEventListener("click", async (e) => {
     doAction("run_routine", { id: Number(ds.routine) }, { button: t }).catch(() => {});
     return;
   }
+  if (ds.savedZone && S.map) {
+    const rect = restoreZone(ds.savedZone, S.map);
+    if (rect) { setTool("zone"); S.zone = rect; refreshMapOverlays(); }
+    return;
+  }
+  if (ds.savedPlan) {
+    const plan = presets().plans.find((item) => item.id === ds.savedPlan);
+    if (!plan) return;
+    setTool("rooms");
+    const valid = new Set(S.map?.rooms.map((room) => room.id) ?? []);
+    S.selected = plan.rooms.filter((room) => valid.has(room));
+    S.repeat = plan.repeat;
+    if (plan.cleaning) await setModeValue("cleaning", plan.cleaning, "set_cleaning_mode", { mode: plan.cleaning });
+    if (plan.fan != null) await setModeValue("fan", plan.fan, "set_fan", { code: plan.fan });
+    if (plan.water != null) await setModeValue("water", plan.water, "set_water", { code: plan.water });
+    if (plan.mop != null) await setModeValue("mop", plan.mop, "set_mop", { code: plan.mop });
+    refreshMapOverlays();
+    return;
+  }
+  if (ds.deletePreset && ds.presetKind) {
+    deletePreset(ds.presetKind === "zone" ? "zone" : "plan", ds.deletePreset);
+    return loadSettings();
+  }
 
   const act = ds.act;
   if (!act) return;
@@ -93,6 +117,22 @@ document.addEventListener("click", async (e) => {
     case "clear-map-history":
       if (confirm("Clear saved map versions for this robot from this browser?")) clearMapHistory();
       return;
+    case "save-zone": {
+      if (!S.zone || !S.map) return;
+      const name = prompt("Name this cleaning zone:")?.trim();
+      if (!name) return;
+      saveZone(name, S.zone, S.map);
+      refreshMapOverlays();
+      return;
+    }
+    case "save-plan": {
+      if (!S.selected.length) return;
+      const name = prompt("Name this cleaning plan:")?.trim();
+      if (!name) return;
+      savePlan(name, S.selected, S.repeat ?? S.status?.mode?.repeat ?? 1);
+      refreshMapOverlays();
+      return;
+    }
     case "history-open":
       return showMapHistory();
     case "history-compare":

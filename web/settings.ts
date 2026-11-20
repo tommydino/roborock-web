@@ -11,6 +11,7 @@ import { S } from "./state";
 import { notifyEnabled, notifySupported, setNotify } from "./notify";
 import { themeChoice } from "./theme";
 import type { Choice, DeviceTimelineStep, RunDetail, RunSummary, Settings } from "./types";
+import { presets } from "./presets";
 
 let runHistory: RunSummary[] = [];
 let historyRequest = 0;
@@ -687,6 +688,17 @@ export function renderSettings(): void {
   if (s.routines?.length) {
     cards.push(`<div class="card"><div class="card-head"><h3 class="card-title">${icon("play")}Routines</h3></div>
       ${s.routines.map((r) => row("spark", esc(r.name), null, `<button class="btn-soft" data-routine="${r.id}">${icon("play")}Run</button>`)).join("")}</div>`);
+  }
+
+  const saved = presets();
+  if (saved.zones.length || saved.plans.length) {
+    const savedRow = (kind: "zone" | "plan", id: string, name: string, sub: string) =>
+      row(kind === "zone" ? "zone" : "spark", esc(name), sub,
+        `<button class="run-delete" data-delete-preset="${esc(id)}" data-preset-kind="${kind}" aria-label="Delete ${esc(name)}">${icon("trash")}</button>`);
+    cards.push(`<div class="card"><div class="card-head"><h3 class="card-title">${icon("spark")}Saved cleaning</h3></div>
+      ${saved.plans.map((p) => savedRow("plan", p.id, p.name, `${p.rooms.length} room${p.rooms.length === 1 ? "" : "s"} · ${p.repeat}×`)).join("")}
+      ${saved.zones.map((z) => savedRow("zone", z.id, z.name, "Saved map zone")).join("")}
+      <div class="note">Create plans after selecting rooms, or save a zone after drawing it on the map.</div></div>`);
   }
 
   // History
