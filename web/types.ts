@@ -214,6 +214,11 @@ export interface RunSummary {
   mapped: boolean; // the path is known, so it counts towards freshness
   mopped: boolean;
   rooms: number[]; // rooms it covered at least half of
+  wash_count?: number | null;
+  dust_collected?: boolean | null;
+  empty_count?: number;
+  avoid_count?: number | null;
+  remopped?: boolean;
 }
 
 export interface RunDetail {
