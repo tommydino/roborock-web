@@ -136,7 +136,7 @@ def timeline_rows(events, rooms):
                     detail.append("Heavy stains detected. High-intensity mopping started.")
                 elif reason == 3:
                     label = "Automatic Re-Mopping"
-                    detail.append("The robot detected a dirty area, washed the mop and mopped the area again.")
+                    detail.append("A dirty area is detected, robot returns to the dock for mop washing and mops this area again.")
         if label:
             rows.append({"at": at, "label": label, "detail": " · ".join(filter(None, detail))})
     return rows

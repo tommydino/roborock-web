@@ -137,11 +137,23 @@ function readAppTimeline(id: string): { text: string; transcript?: AppTimeline }
   } catch { return { text: "" }; }
 }
 
-function timelineRow(time: string, label: string, details: string[], major: boolean): string {
+function timelineRow(time: string, label: string, details: string[], major: boolean, fromApp: boolean): string {
   const clock = `<time>${esc(time)}</time>`;
+  let body = "";
+  if (details.length) {
+    const lines = details.map(d => esc(d));
+    if (!major) body = `<div class="rr-detail">${lines.join(" | ")}</div>`;
+    else if (label.startsWith("Start ")) body = `<ul class="rr-detail rr-plan">${lines.map(d => `<li>${d}</li>`).join("")}</ul>`;
+    else if (fromApp && label === "Automatic Re-Mopping") body = `<div class="rr-detail rr-ai"><b>AI</b><div>${lines.join(" · ")}</div></div>`;
+    else {
+      const modeIcon = details[0] === "Vacuum" ? "fan" : details[0] === "Mop" ? "drop" : null;
+      const options = lines.slice(1).join(" | ");
+      body = `<div class="rr-detail"><div>${lines[0]}</div>${modeIcon || options ? `<small class="rr-options">${modeIcon ? icon(modeIcon) : ""}${modeIcon && options ? " | " : ""}${options}</small>` : ""}</div>`;
+    }
+  }
   return `<li class="rr-step ${major ? "rr-major" : "rr-minor"}">
-    <div class="rr-clock">${major ? clock : ""}</div><i aria-hidden="true">${major ? "✓" : ""}</i>
-    <div class="rr-event"><span>${esc(label)}</span>${details.length ? `<div class="rr-detail">${details.map(d => `<div>${esc(d)}</div>`).join("")}</div>` : ""}${major ? "" : clock}</div>
+    <div class="rr-clock">${major ? clock : ""}</div><div class="rr-rail" aria-hidden="true"><i>${major ? "✓" : ""}</i></div>
+    <div class="rr-event"><span>${esc(label)}</span>${body}${major ? "" : clock}</div>
   </li>`;
 }
 
@@ -155,7 +167,7 @@ function appTimelineRows(value: string): string {
     if (!match) return "";
     const [label, ...details] = match[2].split(" | ");
     const major = isMilestone(label);
-    return timelineRow(match[1], label, major || !details.length ? details : [details.join(" | ")], major);
+    return timelineRow(match[1], label, major || !details.length ? details : [details.join(" | ")], major, true);
   }).join("");
 }
 
@@ -163,7 +175,7 @@ function runDetailHtml(): string {
   if (!selectedRunId) return "";
   if (!selectedRun) return `<section class="run-detail"><div class="history-head"><b>Cleaning run</b><button class="btn-soft" data-run-close>Close</button></div><p class="muted">Loading run details…</p></section>`;
   const run = selectedRun;
-  const clock = (ts: number) => new Date(ts * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  const clock = (ts: number) => new Date(ts * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
   const duration = run.duration ?? Math.max(0, run.end - run.begin);
   const result = run.complete === true ? "Completed" : run.complete === false ? "Stopped before completion" : "Result not reported";
   const mode = run.mode?.replaceAll("_", " ") ?? null;
@@ -173,10 +185,11 @@ function runDetailHtml(): string {
   const extra = run.record_details;
   const area = useTranscript && transcript ? `${transcript.area_m2} m²` :
     extra?.cleaned_area != null ? `${Math.round(extra.cleaned_area)} m²` : fmtArea(run.area);
+  const emptyings = run.device_timeline?.filter(step => step.label === "Auto Emptying").length;
   const subtitle = (useTranscript && transcript ? transcript.summary : undefined) ?? [
-    startType ? human(startType) : null, extra?.rooms ? "Rooms" : null, mode,
-    run.dust_collected ? "Dust collected" : null,
-    run.wash_count != null ? `Mop wash × ${run.wash_count}` : null,
+    startType ? human(startType) : null, extra?.rooms || run.device_timeline?.some(step => step.label === "Start selective room cleaning") ? "Rooms" : null,
+    emptyings ? `Dust collection × ${emptyings}` : run.dust_collected ? "Dust collected" : null,
+    run.wash_count ? `Mop wash × ${run.wash_count}` : null,
   ].filter(Boolean).join(" · ");
   const recordedEvents = run.events ?? [];
   const timeline = runTimeline(run, result);
@@ -202,19 +215,20 @@ function runDetailHtml(): string {
       </div>
       <p class="run-disclaimer">The robot follows its saved route once. Mop coverage appears along that route. Roborock doesn't provide timestamps for individual path points, so replay timing is approximate.</p>`
       : `<div class="run-no-route">${fetchingHistoryMap ? 'Loading the map for this run…' : 'No saved route available for this run.'}</div>`}
-    <details class="rr-timeline" open>
+    <section class="rr-timeline"><details open>
       <summary><strong>${run.complete === true ? '<span class="rr-done" aria-hidden="true">✓</span>Finished cleaning' : esc(result)}</strong><span class="rr-disclosure" aria-hidden="true"></span>
       <small>${esc(subtitle)}</small></summary>
-      <ol>${useTranscript ? appTimelineRows(appTimeline) : timeline.flatMap(event => {
+      <div class="rr-scroll" tabindex="0" role="region" aria-label="Cleaning timeline"><ol>${useTranscript ? appTimelineRows(appTimeline) : timeline.flatMap(event => {
         if (event.at === null) return [];
         const time = (event.approximate ? "≈ " : "") + clock(event.at);
-        return timelineRow(time, event.label, event.detail ? event.detail.split(" · ") : [], isMilestone(event.label));
+        return timelineRow(time, event.label, event.detail ? event.detail.split(" · ") : [], isMilestone(event.label), !!run.device_timeline?.length);
       }).join("")}</ol>
       ${!useTranscript && untimed.length ? `<section class="rr-untimed"><strong>Reported without a time</strong><ul>${untimed.map(event =>
         `<li>${esc(event.label)}${event.detail ? ` · ${esc(event.detail)}` : ""}</li>`
       ).join("")}</ul></section>` : ""}
-      <footer><span>${fmtDuration(duration)}<small>Cleaning Time</small></span><span>${area}<small>Cleaning Area</small></span></footer>
-    </details>
+      </div></details>
+      <footer><span><strong>${Math.round(duration / 60)}</strong> min<small>Cleaning Time</small></span><span><strong>${esc(area.split(" ")[0])}</strong>${area.endsWith(" m²") ? " m²" : ""}<small>Cleaning Area</small></span></footer>
+    </section>
     <p class="run-disclaimer">${useTranscript ? "Transcribed from the Roborock app." : run.device_timeline?.length ? "Times and events are from the robot’s cleaning history." : recordedEvents.length ? "Times show when Roborock Web observed each change." : "No live transitions were recorded for this run."}</p>
     ${dockWaypoints(run)}
     <details><summary>Edit app timeline</summary><label>One event per line: HH:MM Event | Detail<br><textarea data-app-timeline rows="8" style="width:100%" maxlength="20000">${esc(appTimeline)}</textarea></label><button class="btn-soft" data-save-timeline>Save for this run</button><label>Import a transcript for this run <input type="file" accept=".json,application/json" data-import-timeline></label><small>Saved in this browser.</small></details>
