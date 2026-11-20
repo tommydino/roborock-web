@@ -217,6 +217,8 @@ def create_app(demo: bool, data_dir: Path | None = None) -> FastAPI:
         detail = controller.history.detail(run_id) if cached and not demo else await controller.run_detail(run_id)
         if detail is None:
             raise HTTPException(404, "Cleaning run not found")
+        if not demo:
+            detail["needs_timeline"] = controller.needs_timeline(run_id)
         return detail
 
     @app.get("/api/devices/{duid}/runs/{run_id}/diagnostics")

@@ -16,6 +16,7 @@ import sqlite3
 import statistics
 import time
 import zlib
+
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
@@ -23,6 +24,7 @@ from typing import Any
 from PIL import Image, ImageChops, ImageDraw
 
 from maprender import SCALE, RenderedMap
+from timeline import timeline_rows
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -68,6 +70,7 @@ class Run:
     dust_collected: bool | None = None
     record_details: dict[str, Any] | None = None  # extra fields from the raw historical record
     events: list[dict[str, Any]] | None = None  # live status transitions observed by this app
+    device_events: list[dict[str, Any]] | None = None  # historical timeline RPC
 
 
 def _pack(img: Image.Image) -> str:
@@ -217,6 +220,8 @@ class History:
         previous = next((r for r in self.runs if r.id == run.id), None)
         if previous and run.record_details is None:
             run.record_details = previous.record_details
+        if previous and run.device_events is None:
+            run.device_events = previous.device_events
         cutoff = time.time() - KEEP_DAYS * 86400
         runs = [r for r in self.runs if r.id != run.id and r.end >= cutoff]
         if run.end >= cutoff:
@@ -234,6 +239,7 @@ class History:
             return None
         route = run.route
         asset = self.maps.get(str(route.get("map"))) if route else None
+        rooms = {room["id"]: room["name"] for room in (asset or {}).get("rooms", [])}
         return {
             "id": run.id, "begin": run.begin, "end": run.end, "duration": run.duration,
             "area": run.area, "complete": run.complete, "mode": run.mode, "source": run.source,
@@ -242,6 +248,7 @@ class History:
             "dust_collected": run.dust_collected,
             "record_details": run.record_details,
             "events": self._events_for(run),
+            "device_timeline": timeline_rows(run.device_events, rooms) if run.device_events else None,
             "route": route, "map": asset,
         }
 

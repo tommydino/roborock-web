@@ -22,6 +22,7 @@ function roomEvent(event?: RunEvent): boolean {
 }
 
 export function runTimeline(run: RunDetail, result: string): TimelineStep[] {
+  if (run.device_timeline?.length) return run.device_timeline;
   const events = [...(run.events ?? [])].sort((a, b) => a.at - b.at);
   const extra = run.record_details;
   const sequence = events.some(event => roomEvent(event) && event.detail?.split(" · ").includes("Vac followed by Mop"));

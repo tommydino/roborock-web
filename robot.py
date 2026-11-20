@@ -56,6 +56,7 @@ import roborock.mqtt.roborock_session as _mqtt_session
 
 from history import KEEP_DAYS, RECENT_RUNS, Grid, History, Run, estimate_model, freshness, grid_from_map, map_asset, route_from_map
 from maprender import MapRenderer, RenderedMap
+from timeline import read_timeline
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -244,6 +245,8 @@ class DeviceController:
         self._run_last_room: tuple[int, str | None] | None = None
         self._run_map_at = 0.0
         self._history_at = 0.0
+        self._timeline_lock = asyncio.Lock()
+        self._timeline_retry: dict[str, float] = {}
         self._record_maps_loaded: set[str] = set()
         self._import_lock = asyncio.Lock()
         self._import_queue: list[int] = []
@@ -866,10 +869,39 @@ class DeviceController:
             self._fresh = (key, await asyncio.to_thread(freshness, self.history, self._map, flag))
         return self._fresh[1]
 
+    def _supports_timeline(self) -> bool:
+        return (
+            _flag(self._p.device_features, "is_clean_history_time_line_supported")
+            or self.device.product.model == "roborock.vacuum.a279"
+        )
+
+    def needs_timeline(self, run_id: str) -> bool:
+        run = next((item for item in self.history.runs if item.id == run_id), None)
+        return bool(self._supports_timeline() and run and not run.device_events
+                    and time.monotonic() >= self._timeline_retry.get(run_id, 0))
+
+    async def _load_timeline(self, run: Run) -> None:
+        async with self._timeline_lock:
+            if not self.needs_timeline(run.id):
+                return
+            self._timeline_retry[run.id] = time.monotonic() + 60
+            try:
+                async with asyncio.timeout(15):
+                    events = await read_timeline(self._p.clean_summary.rpc_channel, run.begin)
+            except Exception as err:
+                _LOGGER.info("Historical timeline unavailable for %s: %s", run.id, err)
+                return
+            current = next((item for item in self.history.runs if item.id == run.id), None)
+            if current and events:
+                self.history.add(dataclasses.replace(current, device_events=events))
+                self._timeline_retry.pop(run.id, None)
+
     async def run_detail(self, run_id: str) -> dict[str, Any] | None:
         run = next((item for item in self.history.runs if item.id == run_id), None)
         if run and run_id.isdigit():
             requests = []
+            if self.needs_timeline(run_id):
+                requests.append(self._load_timeline(run))
             if (not run.route or run.source == "live") and run_id not in self._record_maps_loaded:
                 requests.append(self._backfill(int(run_id)))
             if run.record_details is None:
@@ -911,6 +943,14 @@ class DeviceController:
         record_map = None
         map_transport_events: list[dict[str, Any]] = []
         command_errors = []
+        run = next(r for r in self.history.runs if r.id == run_id)
+        timeline_events = run.device_events
+        if not timeline_events and self._supports_timeline():
+            try:
+                async with asyncio.timeout(15):
+                    timeline_events = await read_timeline(self._p.clean_summary.rpc_channel, run.begin)
+            except Exception as err:
+                command_errors.append({"command": "get_clean_detail", "error": type(err).__name__})
         try:
             record = await _send_history_command(
                 self._p.clean_summary.rpc_channel, RoborockCommand.GET_CLEAN_RECORD, [record_id]
@@ -940,6 +980,7 @@ class DeviceController:
             },
             "stored_run": self.history.detail(run_id),
             "raw_clean_record": record,
+            "raw_clean_detail_events": timeline_events,
             "record_map": _map_diagnostics(record_map),
             "map_transport_events": map_transport_events,
             "command_errors": command_errors,

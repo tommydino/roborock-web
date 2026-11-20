@@ -217,6 +217,8 @@ export interface RunSummary {
 }
 
 export interface RunDetail {
+  needs_timeline?: boolean;
+  device_timeline?: { at: number; label: string; detail?: string }[] | null;
   id: string;
   begin: number;
   end: number;

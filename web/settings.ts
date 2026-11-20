@@ -169,10 +169,11 @@ function runDetailHtml(): string {
   const mode = run.mode?.replaceAll("_", " ") ?? null;
   const startType = run.start_type?.replaceAll("_", " ") ?? null;
   const { text: appTimeline, transcript } = readAppTimeline(run.id);
+  const useTranscript = !!appTimeline && !run.device_timeline?.length;
   const extra = run.record_details;
-  const area = transcript ? `${transcript.area_m2} m²` :
+  const area = useTranscript && transcript ? `${transcript.area_m2} m²` :
     extra?.cleaned_area != null ? `${Math.round(extra.cleaned_area)} m²` : fmtArea(run.area);
-  const subtitle = transcript?.summary ?? [
+  const subtitle = (useTranscript && transcript ? transcript.summary : undefined) ?? [
     startType ? human(startType) : null, extra?.rooms ? "Rooms" : null, mode,
     run.dust_collected ? "Dust collected" : null,
     run.wash_count != null ? `Mop wash × ${run.wash_count}` : null,
@@ -204,17 +205,17 @@ function runDetailHtml(): string {
     <details class="rr-timeline" open>
       <summary><strong>${run.complete === true ? '<span class="rr-done" aria-hidden="true">✓</span>Finished cleaning' : esc(result)}</strong><span class="rr-disclosure" aria-hidden="true"></span>
       <small>${esc(subtitle)}</small></summary>
-      <ol>${appTimeline ? appTimelineRows(appTimeline) : timeline.flatMap(event => {
+      <ol>${useTranscript ? appTimelineRows(appTimeline) : timeline.flatMap(event => {
         if (event.at === null) return [];
         const time = (event.approximate ? "≈ " : "") + clock(event.at);
         return timelineRow(time, event.label, event.detail ? event.detail.split(" · ") : [], isMilestone(event.label));
       }).join("")}</ol>
-      ${!appTimeline && untimed.length ? `<section class="rr-untimed"><strong>Reported without a time</strong><ul>${untimed.map(event =>
+      ${!useTranscript && untimed.length ? `<section class="rr-untimed"><strong>Reported without a time</strong><ul>${untimed.map(event =>
         `<li>${esc(event.label)}${event.detail ? ` · ${esc(event.detail)}` : ""}</li>`
       ).join("")}</ul></section>` : ""}
       <footer><span>${fmtDuration(duration)}<small>Cleaning Time</small></span><span>${area}<small>Cleaning Area</small></span></footer>
     </details>
-    <p class="run-disclaimer">${appTimeline ? "Transcribed from the Roborock app." : recordedEvents.length ? "Times show when Roborock Web observed each change." : "No live transitions were recorded for this run."}</p>
+    <p class="run-disclaimer">${useTranscript ? "Transcribed from the Roborock app." : run.device_timeline?.length ? "Times and events are from the robot’s cleaning history." : recordedEvents.length ? "Times show when Roborock Web observed each change." : "No live transitions were recorded for this run."}</p>
     ${dockWaypoints(run)}
     <details><summary>Edit app timeline</summary><label>One event per line: HH:MM Event | Detail<br><textarea data-app-timeline rows="8" style="width:100%" maxlength="20000">${esc(appTimeline)}</textarea></label><button class="btn-soft" data-save-timeline>Save for this run</button><label>Import a transcript for this run <input type="file" accept=".json,application/json" data-import-timeline></label><small>Saved in this browser.</small></details>
     ${run.source === "demo" ? "" : `<a class="btn-soft run-source-data" href="${esc(devicePath(`runs/${encodeURIComponent(run.id)}/diagnostics`))}">Download raw run data for timeline analysis</a>`}
@@ -368,7 +369,7 @@ async function openHistoryRun(id: string): Promise<void> {
     if (!current()) return;
     selectedRun = cached;
     const needsMap = !cached.route || !cached.map;
-    if ((needsMap || cached.record_details == null) && cached.source !== "demo") {
+    if ((needsMap || cached.record_details == null || cached.needs_timeline) && cached.source !== "demo") {
       fetchingHistoryMap = needsMap;
       renderRunHistory();
       const refreshed = await api<RunDetail>(path);
