@@ -5,7 +5,7 @@
 import { $, $$, closest, cssVar, esc, icon, pct } from "../dom";
 import { S, type Layers } from "../state";
 import type { Obstacle, ObstacleKind, Polyline } from "../types";
-import { inner, mapImg } from "./elements";
+import { inner, mapImg, stage } from "./elements";
 import { planImage, sync3D } from "./views";
 
 const infoSvg = $<SVGSVGElement>("#map-info");
@@ -60,6 +60,8 @@ const points = (line: Polyline) => line.map(([x, y]) => `${x},${y}`).join(" ");
 export function renderThings(): void {
   const m = S.map;
   if (!m) return;
+  objectInfo.hidden = true;
+  activeMarker = null;
   infoSvg.setAttribute("viewBox", `0 0 ${m.width} ${m.height}`);
   let svg = "";
   // A hairline at half strength: dense criss-cross runs build up softly instead of
@@ -74,7 +76,7 @@ export function renderThings(): void {
   infoSvg.innerHTML = svg;
 
   const marker = (cls: string, x: number, y: number, title: string, ic: string, count = 1) =>
-    `<span class="thing ${cls}" style="left:${pct(x, m.width)};top:${pct(y, m.height)}" title="${esc(title)}">${icon(ic)}${count > 1 ? `<b class="count">${count}</b>` : ""}</span>`;
+    `<span class="thing ${cls}" role="button" tabindex="0" data-map-info="${esc(title)}" aria-label="${esc(title)}" style="left:${pct(x, m.width)};top:${pct(y, m.height)}" title="${esc(title)}">${icon(ic)}${count > 1 ? `<b class="count">${count}</b>` : ""}</span>`;
   thingsEl.innerHTML =
     groupObstacles(m.obstacles ?? [], m.scale).map((g) => marker(g.kind, g.x, g.y, g.title, OBSTACLE_ICON[g.kind], g.count)).join("") +
     (m.goto ? marker("goto", m.goto[0], m.goto[1], "Where the robot is heading", "target") : "");
@@ -161,6 +163,52 @@ function carpetImage(): string {
 /* ---- the Layers menu ---- */
 
 const pop = $("#layers-pop");
+const objectInfo = document.createElement("div");
+objectInfo.className = "map-object-info";
+objectInfo.hidden = true;
+objectInfo.setAttribute("role", "status");
+stage.append(objectInfo);
+let activeMarker: HTMLElement | null = null;
+
+function showObjectInfo(marker: HTMLElement): void {
+  const text = marker.dataset.mapInfo;
+  if (!text) return;
+  if (!objectInfo.hidden && activeMarker === marker) {
+    objectInfo.hidden = true;
+    activeMarker = null;
+    return;
+  }
+  objectInfo.textContent = text;
+  activeMarker = marker;
+  objectInfo.hidden = false;
+  const target = marker.getBoundingClientRect();
+  const box = stage.getBoundingClientRect();
+  objectInfo.style.left = `${Math.max(76, Math.min(box.width - 76, target.left + target.width / 2 - box.left))}px`;
+  objectInfo.style.top = `${Math.max(12, target.top - box.top - 10)}px`;
+}
+
+document.addEventListener("click", (e) => {
+  const marker = closest<HTMLElement>(e.target, ".thing[data-map-info]");
+  if (marker) {
+    e.stopPropagation();
+    showObjectInfo(marker);
+  } else if (!closest(e.target, ".map-object-info")) {
+    objectInfo.hidden = true;
+    activeMarker = null;
+  }
+});
+
+document.addEventListener("keydown", (e) => {
+  const marker = closest<HTMLElement>(e.target, ".thing[data-map-info]");
+  if (marker && (e.key === "Enter" || e.key === " ")) {
+    e.preventDefault();
+    showObjectInfo(marker);
+  }
+  if (e.key === "Escape") {
+    objectInfo.hidden = true;
+    activeMarker = null;
+  }
+});
 
 $("#layers-btn").addEventListener("click", (e) => {
   e.stopPropagation();

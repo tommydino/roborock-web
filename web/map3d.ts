@@ -446,7 +446,7 @@ export class Map3D {
 
     this.markers = markers.map((k) => new THREE.Vector3(k.x / this.scale - this.W / 2, 1.5, k.y / this.scale - this.H / 2));
     this.markersEl.innerHTML = markers
-      .map((k) => `<span class="thing ${k.cls}" title="${esc(k.title)}"><svg class="i"><use href="#i-${k.icon}"/></svg>${(k.count ?? 1) > 1 ? `<b class="count">${k.count}</b>` : ""}</span>`)
+      .map((k) => `<span class="thing ${k.cls}" role="button" tabindex="0" data-map-info="${esc(k.title)}" aria-label="${esc(k.title)}" title="${esc(k.title)}"><svg class="i"><use href="#i-${k.icon}"/></svg>${(k.count ?? 1) > 1 ? `<b class="count">${k.count}</b>` : ""}</span>`)
       .join("");
     this.setLayers(this.layers);
   }

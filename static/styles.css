@@ -522,6 +522,9 @@ input[type="time"], .field { width: 100%; margin-top: 4px; border: 1px solid var
 .thing.obstacle svg { width: 8px; height: 8px; }
 .thing .count { position: absolute; top: -7px; right: -9px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 999px; background: var(--text); color: var(--card); font-size: 10px; font-weight: 800; line-height: 16px; text-align: center; font-style: normal; }
 .thing.goto { background: var(--accent); color: #fff; border-color: #fff; cursor: default; }
+.map-object-info { position: absolute; z-index: 10; transform: translate(-50%, -100%); max-width: min(280px, calc(100% - 24px)); padding: 9px 12px; border-radius: 10px; background: var(--text); color: var(--card); box-shadow: var(--shadow-lift); font-size: 12px; font-weight: 650; line-height: 1.35; text-align: center; pointer-events: none; }
+.map-object-info::after { content: ""; position: absolute; top: 100%; left: 50%; margin-left: -6px; border: 6px solid transparent; border-top-color: var(--text); }
+.map-object-info[hidden] { display: none; }
 .map-inner.hide-path .map-info .path, .map-inner.hide-path .map-info .mop-path { display: none; }
 .map-inner.hide-carpets img.map-carpets { display: none; }
 .map-inner.hide-obstacles .thing:not(.goto) { display: none; }
