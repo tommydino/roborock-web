@@ -350,7 +350,9 @@ function renderRunHistory(): void {
   const list = $opt<HTMLElement>("#history-runs-list");
   const detail = $opt<HTMLElement>("#history-run-detail");
   if (!list || !detail) return;
-  list.innerHTML = runHistory.length
+  list.hidden = selectedRunId !== null;
+  detail.hidden = selectedRunId === null;
+  list.innerHTML = selectedRunId ? "" : runHistory.length
     ? `<div class="history-runs-label">Recent runs</div><ul class="history-runs-list">${runHistory.map((run) => {
       const mode = run.mode?.replaceAll("_", " ");
       return `<li class="history-run-item"><button class="run-open" data-run="${esc(run.id)}"><span class="run-when">${esc(fmtWhen(run.begin))}</span>
