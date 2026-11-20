@@ -21,6 +21,7 @@ class RecordTimelineTest(unittest.TestCase):
 
         first = [
             event(0, 25, **{"252": 3, "8": 1, "254": [0, 0, 1]}),
+            event(1, 25, **{"252": 3, "8": 1, "254": [0, 0, 1]}),
             event(1, 56, **{"7": 1}),
             event(120, 42, **{"2": 16, "3": 2, "4": 0, "5": 0, "6": 1}),
             event(360, 54, **{"541": 2}),
@@ -38,17 +39,18 @@ class RecordTimelineTest(unittest.TestCase):
         ]
         channel = AsyncMock()
         channel.send_command.side_effect = [
-            [{"from": 0, "num": 6, "more": 1, "events": first}],
-            {"result": {"from": 6, "num": len(second), "more": 0, "events": second}},
+            [{"from": 0, "num": len(first), "more": 1, "events": first}],
+            {"result": {"from": len(first), "num": len(second), "more": 0, "events": second}},
         ]
         rows = timeline_rows(asyncio.run(read_timeline(channel, begin)), {16: "Bathroom"})
         self.assertEqual(channel.send_command.call_args.kwargs["params"],
-                         {"begin": begin, "id": 0, "type": 0, "from": 6})
+                         {"begin": begin, "id": 0, "type": 0, "from": len(first)})
         self.assertEqual([row["label"] for row in rows], [
             "Start selective room cleaning", "Detaching mop cloth mounts", "Clean Bathroom",
             "Auto Emptying", "Installing mop cloth mounts", "Wash Mop", "Resume",
             "Clean Bathroom", "Wash Mop", "Automatic Re-Mopping", "Cleaning Finished",
         ])
+        self.assertEqual(sum(row["label"].startswith("Start ") for row in rows), 1)
         self.assertEqual(rows[0]["detail"].split(" · "), ["Comprehensive Home Environment Perception",
                          "Smart Dynamic Path Planning", "High Coverage", "Vac followed by Mop"])
         self.assertEqual([rows[i]["detail"] for i in [2, 3, 7, 8]],

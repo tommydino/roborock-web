@@ -106,6 +106,7 @@ def clean_settings(fields):
 def timeline_rows(events, rooms):
     rows = []
     replenish = None
+    start_seen = False
     for event in sorted(events, key=lambda item: number(item.get("t")) or 0):
         at = number(event.get("t"))
         if at is None or at <= 0:
@@ -116,6 +117,9 @@ def timeline_rows(events, rooms):
         detail = []
         clean = None
         if code == 25:
+            if start_seen:
+                continue
+            start_seen = True
             label = {1: "Start full cleaning", 2: "Start zone cleaning", 3: "Start selective room cleaning",
                      11: "Start combined cleaning"}.get(
                 attribute(fields, 252), "Start cleaning")
