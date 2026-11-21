@@ -1,4 +1,5 @@
 import asyncio
+import json
 import tempfile
 import time
 import unittest
@@ -71,6 +72,47 @@ class RecordTimelineTest(unittest.TestCase):
         self.assertTrue(summary["remopped"])
         self.assertEqual(summary["wash_count"], 2)
         self.assertTrue(summary["dust_collected"])
+        history._observations.close()
+
+    def test_saros_string_fragments_match_app_timeline(self):
+        begin = 1795256547
+
+        def event(offset, code, fields):
+            return {"t": begin + offset, "i": code, "e": json.dumps(fields)}
+
+        events = [
+            event(1, 25, {"254": [8388883, 402724881, 589299713, 4113]}),
+            event(1, 25, {"0": 254}),
+            event(1, 25, {"253": 0, "8": 0}),
+            event(1, 25, {"251": 2, "252": 3, "3": 2, "4": 35, "5": 0, "6": 1, "11": 1}),
+            event(1, 52, {"521": 3, "522": 0}),
+            event(181, 13, {"131": 14}),
+            event(181, 42, {"2": 6, "3": 2, "4": 35, "5": 0, "6": 1, "11": 1}),
+            event(421, 54, {"541": 2}),
+            event(481, 52, {"521": 2, "522": 2}),
+            event(841, 61, {"611": 3}),
+            event(841, 42, {"2": 36, "421": 3}),
+            event(961, 12, {}),
+            event(1021, 52, {"521": 2, "522": 1}),
+        ]
+        rows = timeline_rows(events, {6: "Kitchen1"})
+        self.assertEqual([row["label"] for row in rows], [
+            "Start selective room cleaning", "Wash Mop", "Resume", "Clean Kitchen1",
+            "Auto Emptying", "Wash Mop", "Automatic Re-Mopping", "Cleaning Finished", "Wash Mop",
+        ])
+        self.assertEqual(rows[0]["detail"].split(" · "), [
+            "Comprehensive Home Environment Perception", "Smart Dynamic Path Planning",
+            "High Coverage", "Vac & Mop",
+        ])
+        self.assertEqual(rows[3]["detail"], "Vac & Mop · ×1")
+        self.assertEqual(rows[4]["detail"], "Balanced")
+        self.assertEqual(rows[5]["detail"], "Deep · Hot Water")
+        self.assertIn("dirty area is detected", rows[6]["detail"])
+        self.assertEqual(rows[8]["detail"], "Deep · Warm Water")
+
+        history = History(None)
+        history.add(Run(str(begin), begin, begin + 1021, wash_count=2, device_events=events))
+        self.assertEqual(history.detail(str(begin))["wash_count"], 3)
         history._observations.close()
 
     def test_incomplete_or_repeated_page_is_not_cached_as_complete(self):
