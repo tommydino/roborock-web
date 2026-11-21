@@ -774,7 +774,7 @@ svg.i.tiny { width: 12px; height: 12px; }
 .rr-plan li + li { margin-top: .5em; }
 .rr-plan li::marker { color: #888895; }
 .rr-major .rr-ai { display: flex; align-items: baseline; gap: 6px; background: #25232e; }
-.rr-ai b { padding: 0 4px; border-radius: 4px; background: #5954a6; color: white; font-size: .78em; }
+.rr-ai b { flex: none; white-space: nowrap; padding: 0 4px; border-radius: 4px; background: #5954a6; color: white; font-size: .78em; }
 .rr-options { display: flex; align-items: center; gap: 7px; min-height: 1.2em; color: var(--rr-muted); }
 .rr-options .i { width: 1em; height: 1em; }
 .rr-options > span { display: inline-flex; align-items: center; gap: 2px; }
