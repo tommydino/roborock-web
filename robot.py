@@ -962,7 +962,15 @@ class DeviceController:
                 details["rooms"] = True
         current = next((item for item in self.history.runs if item.id == run_id), None)
         if current is not None:
-            self.history.add(dataclasses.replace(current, record_details=details))
+            updates = {"record_details": details}
+            if isinstance(record, dict) and record.get("begin") == int(run_id):
+                if type(record.get("wash_count")) is int and record["wash_count"] >= 0:
+                    updates["wash_count"] = record["wash_count"]
+                if type(record.get("avoid_count")) is int and record["avoid_count"] >= 0:
+                    updates["avoid_count"] = record["avoid_count"]
+                if type(record.get("dust_collection_status")) is int:
+                    updates["dust_collected"] = bool(record["dust_collection_status"])
+            self.history.add(dataclasses.replace(current, **updates))
 
     async def run_diagnostics(self, run_id: str) -> dict[str, Any]:
         """Export the unparsed Roborock replies needed to investigate run history."""
