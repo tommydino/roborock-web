@@ -36,7 +36,7 @@ If you try it with another model, please open an issue saying whether it worked.
 You need Python 3.11+ (or [uv](https://docs.astral.sh/uv/)) and Node.js 18+.
 
 ```bash
-git clone https://github.com/sakerrr/roborock-web.git
+git clone https://github.com/tommydino/roborock-web.git
 cd roborock-web
 ```
 
@@ -50,6 +50,8 @@ macOS: double-click **`start.command`**. On macOS or Linux, from a terminal:
 The first run sets up a Python environment and builds the interface. After that, the app opens at http://localhost:8765. (On Windows, run it under WSL; that hasn't been tested.)
 
 Sign in with the email you use in the **Roborock app**. You'll get a one-time code by email, just like the app sends. Mi Home / Xiaomi Home accounts are not supported.
+
+For Docker Compose, run `docker compose up -d --build` from the cloned folder. To update an existing installation after a change on GitHub, run `git pull` followed by `docker compose up -d --build` in that folder. The named `roborock-web-data` volume keeps your sign-in and local history when the container is rebuilt.
 
 ### Options
 
@@ -99,7 +101,7 @@ The phone app tells you what the robot is doing now. Freshness tells you what it
 - **The map** goes from pale (cleaned in the last day) to dark (over two weeks ago). Spots it never reached, in rooms it does clean, are darkest. That's usually under the bed, the sofa or a desk, or something left on the floor. Hover anywhere for the exact age, and when it was last mopped.
 - **The panel** next to the map lists every room with when it was cleaned and mopped. Set how often each room should be cleaned (every day to every two weeks). Rooms past that are marked **Due**, and **Clean due rooms** sends the robot to just those, with your current cleaning mode. Click a room to pick it for a clean.
 
-**Settings → History** lists recent runs with their duration, area and cleaning mode. Open a run for its map, route playback and timeline. Choose 1×, 3× or 5× playback speed; zoom with the map controls or mouse wheel, and drag the map while zoomed. Use the trash button beside a run to delete it from the robot and this app; the app asks the robot to delete the record and removes its local copy only after the robot confirms it. The app records each run the robot finishes **while the app is running**, including its ordered route. During a run it samples dock and resume states and the current room to add timestamped timeline events. Room transitions are sampled from map updates, so their times are approximate. The standard saved clean record contains a summary, not the detailed event timeline shown by the Roborock app; the library used here currently has no command for that model-specific timeline. Use **Download raw run data for timeline analysis** on a run to export the record, device feature flags and original history map for investigation. This export includes private floorplan data. Some robots or individual records may not provide a route map. Playback timing is approximate because Roborock doesn't provide timestamps for individual route points. A run counts as cleaning a room once it covered half of its floor. History stays on your computer and keeps the last 120 days.
+**Settings → History** lists recent runs with their duration, area and cleaning mode. Open a run for its map, route playback and timeline. Choose 1×, 3× or 5× playback speed; zoom with the map controls or mouse wheel, and drag the map while zoomed. Use the trash button beside a run to delete it from the robot and this app; the app asks the robot to delete the record and removes its local copy only after the robot confirms it. For supported robots, the app retrieves the detailed cleaning events from the robot, including room cleaning, mop washes and automatic re-mopping. If those events are unavailable, it shows events sampled while the app was running; room transition times from map updates are approximate. You can also import or edit an app timeline for one run, saved in this browser. Use **Download raw run data for timeline analysis** to export the record, device feature flags and original history map for investigation. This export includes private floorplan data. Some robots or individual records may not provide a route map. Playback timing is approximate because Roborock doesn't provide timestamps for individual route points. A run counts as cleaning a room once it covered half of its floor. History stays on your computer and keeps the last 120 days.
 
 ## Editing the map
 
