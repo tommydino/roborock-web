@@ -10,7 +10,6 @@ from __future__ import annotations
 import asyncio
 import base64
 import copy
-from collections import deque
 import dataclasses
 import errno
 import hashlib
@@ -22,10 +21,12 @@ import pickle
 import socket
 import sys
 import time
+from collections import deque
 from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
+import roborock.mqtt.roborock_session as _mqtt_session
 from roborock.const import (
     CLEANING_BRUSH_REPLACE_TIME,
     DUST_COLLECTION_REPLACE_TIME,
@@ -37,24 +38,33 @@ from roborock.const import (
     STRAINER_REPLACE_TIME,
 )
 from roborock.data import UserData
-from roborock.data.v1.v1_containers import CleanRecord, DnDTimer, NetworkInfo
 from roborock.data.v1.v1_clean_modes import WashTowelModes
 from roborock.data.v1.v1_code_mappings import RoborockDockDustCollectionModeCode, RoborockStateCode
-from roborock.devices.device import RoborockDevice
+from roborock.data.v1.v1_containers import CleanRecord, DnDTimer, NetworkInfo
 from roborock.device_features import DeviceFeatures
 from roborock.devices.cache import CacheData, DeviceCacheData
+from roborock.devices.device import RoborockDevice
 from roborock.devices.device_manager import DeviceManager, UserParams, create_device_manager
 from roborock.devices.file_cache import FileCache
-from roborock.devices.transport.local_channel import LocalChannel
 from roborock.devices.traits.v1.common import merge_trait_values
 from roborock.devices.traits.v1.consumeable import ConsumableAttribute
+from roborock.devices.transport.local_channel import LocalChannel
 from roborock.exceptions import RoborockException, RoborockRateLimit, RoborockTooFrequentCodeRequests
 from roborock.roborock_typing import RoborockCommand
 from roborock.web_api import RoborockApiClient
 
-import roborock.mqtt.roborock_session as _mqtt_session
-
-from history import KEEP_DAYS, RECENT_RUNS, Grid, History, Run, estimate_model, freshness, grid_from_map, map_asset, route_from_map
+from history import (
+    KEEP_DAYS,
+    RECENT_RUNS,
+    Grid,
+    History,
+    Run,
+    estimate_model,
+    freshness,
+    grid_from_map,
+    map_asset,
+    route_from_map,
+)
 from maprender import MapRenderer, RenderedMap
 from timeline import read_timeline
 
