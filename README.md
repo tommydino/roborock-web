@@ -22,7 +22,7 @@ It talks to the robot through [python-roborock](https://github.com/python-roboro
 
 ## Which robots work
 
-- **Tested:** Roborock Qrevo S.
+- **Tested:** Roborock Qrevo S and Saros 20 Sonic / Saros 20 Sonic Complete.
 - **Should work:** other Roborock vacuums that use Roborock's main ("V1") protocol, which is most of them: the S5, S6, S7 and S8 series, the Q5, Q7 and Q8 series, and the Qrevo family. Features your model or dock doesn't have (mop washing, drying, auto-empty, cleaning count…) are hidden.
 - **Doesn't work:**
   - Roborock models on the newer protocols: the Dyad and Zeo, and some recent Q-series models. They sign in, but are listed as not supported.
@@ -89,7 +89,7 @@ Every view shows what the robot reports with its map. Use the **Layers** button 
 
 - **Cleaning path**: where it drove, with the stretches it mopped tinted blue.
 - **Carpets**: hatched on the flat maps, slightly raised rugs in 3D.
-- **Obstacles it spotted**: cables, shoes, clothes, pet waste, pets and more. Hover for what it was; if the robot took a photo, it's in the Roborock app.
+- **Obstacles it spotted**: cables, shoes, clothes, pet waste, pets and more. Hover or click/tap an icon to see what the robot detected. If Roborock does not supply a name, the app explains that and shows the internal obstacle type code when available. If the robot took a photo, the popup points you to the Roborock app.
 - **Walls & zones**: invisible walls, no-go, no-mop and no-carpet zones.
 
 While it cleans a zone, the zone is outlined. When you send it to a spot, its target and planned route show up too.
