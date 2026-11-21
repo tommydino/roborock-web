@@ -1,3 +1,4 @@
+import asyncio
 import tempfile
 import time
 import unittest
@@ -10,6 +11,20 @@ from robot import DeviceController, S
 
 
 class LiveTimelineTest(unittest.IsolatedAsyncioTestCase):
+    async def test_detailed_timeline_capture_is_scheduled_once(self):
+        history = History(None)
+        device = SimpleNamespace(duid="test", v1_properties=None)
+        controller = DeviceController(device, history=history)
+        controller._supports_timeline = lambda: True
+        controller._capture_timeline = AsyncMock()
+
+        controller._schedule_timeline("run-1")
+        controller._schedule_timeline("run-1")
+        await asyncio.sleep(0)
+
+        controller._capture_timeline.assert_awaited_once_with("run-1")
+        history._observations.close()
+
     async def test_transitions_survive_late_records_and_restart(self):
         begin = int(time.time()) - 1800
         with tempfile.TemporaryDirectory() as directory:
