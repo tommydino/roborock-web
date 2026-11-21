@@ -223,6 +223,7 @@ export interface RunSummary {
 
 export interface RunDetail {
   needs_timeline?: boolean;
+  timeline_source?: "robot" | "observed" | "summary";
   device_timeline?: DeviceTimelineStep[] | null;
   id: string;
   begin: number;
