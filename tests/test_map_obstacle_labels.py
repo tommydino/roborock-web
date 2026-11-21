@@ -8,9 +8,12 @@ class MapObstacleLabelsTest(unittest.TestCase):
         self.assertEqual(obstacle_kind("Shoes"), ("shoes", "Shoes"))
 
     def test_unknown_marker_explains_missing_robot_data(self):
-        expected = ("obstacle", "Unidentified obstacle – Roborock did not report its type")
+        expected = ("obstacle", "Unidentified obstacle")
         self.assertEqual(obstacle_kind(None), expected)
         self.assertEqual(obstacle_kind("?"), expected)
+
+    def test_unknown_marker_preserves_robot_type_code(self):
+        self.assertEqual(obstacle_kind(None, 62), ("obstacle", "Unidentified obstacle (Roborock type 62)"))
 
     def test_new_robot_description_is_preserved(self):
         self.assertEqual(obstacle_kind("floor_lamp"), ("obstacle", "Floor lamp"))
