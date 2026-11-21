@@ -240,15 +240,18 @@ class History:
         route = run.route
         asset = self.maps.get(str(route.get("map"))) if route else None
         rooms = {room["id"]: room["name"] for room in (asset or {}).get("rooms", [])}
+        device_timeline = timeline_rows(run.device_events, rooms) if run.device_events else None
+        wash_events = sum(row.get("label") == "Wash Mop" for row in (device_timeline or []))
+        wash_count = max(run.wash_count or 0, wash_events) if run.wash_count is not None or wash_events else None
         return {
             "id": run.id, "begin": run.begin, "end": run.end, "duration": run.duration,
             "area": run.area, "complete": run.complete, "mode": run.mode, "source": run.source,
             "start_type": run.start_type, "finish_reason": run.finish_reason,
-            "avoid_count": run.avoid_count, "wash_count": run.wash_count,
+            "avoid_count": run.avoid_count, "wash_count": wash_count,
             "dust_collected": run.dust_collected,
             "record_details": run.record_details,
             "events": self._events_for(run),
-            "device_timeline": timeline_rows(run.device_events, rooms) if run.device_events else None,
+            "device_timeline": device_timeline,
             "timeline_source": "robot" if run.device_events else "observed" if self._events_for(run) else "summary",
             "route": route, "map": asset,
         }
@@ -259,13 +262,15 @@ class History:
             route = run.route
             timeline = timeline_rows(run.device_events, {}) if run.device_events else []
             empty_count = sum(row.get("label") == "Auto Emptying" for row in timeline)
+            wash_events = sum(row.get("label") == "Wash Mop" for row in timeline)
+            wash_count = max(run.wash_count or 0, wash_events) if run.wash_count is not None or wash_events else None
             remopped = any(row.get("label") == "Automatic Re-Mopping" for row in timeline)
             result.append({
                 "id": run.id, "begin": run.begin, "end": run.end, "duration": run.duration,
                 "area": (run.record_details or {}).get("cleaned_area", run.area), "complete": run.complete, "source": run.source,
                 "mapped": bool(route and self.maps.get(str(route.get("map")))),
                 "mopped": bool((route and route.get("mop_path")) or (run.grid and run.grid.mop)),
-                "rooms": [], "mode": run.mode, "wash_count": run.wash_count,
+                "rooms": [], "mode": run.mode, "wash_count": wash_count,
                 "dust_collected": run.dust_collected, "empty_count": empty_count,
                 "avoid_count": run.avoid_count, "remopped": remopped,
             })
