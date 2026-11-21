@@ -34,6 +34,7 @@ export function runTimeline(run: RunDetail, result: string): TimelineStep[] {
     detail: sequence ? "Vac followed by Mop" : undefined,
   }];
   const markers = events.filter(e => e.label === "Replenishment mode observed while mopping");
+  const roomEvents = events.filter(roomEvent);
   const remopped = (extra?.dirty_replenish ?? 0) > 0;
   const timedRemop = remopped && extra?.manual_replenish === 0 && markers.length === 1 ? markers[0] : undefined;
   for (const event of events) {
@@ -45,6 +46,11 @@ export function runTimeline(run: RunDetail, result: string): TimelineStep[] {
       continue;
     }
     if (event.label === "Starting cleaning" && event.at === run.begin) continue;
+    // Live status exposes both a broad pass transition and a room transition.
+    // The Roborock app shows the room row, so suppress the duplicate broad row
+    // when a room row follows it in the same part of the run.
+    if (/^(Vacuum|Mop) pass(?: in selected (?:rooms|zone))?$/.test(event.label)
+        && roomEvents.some(room => Math.abs(room.at - event.at) <= 30)) continue;
     const room = roomEvent(event);
     const detail = room ? event.detail?.split(" · ").filter(d => d !== "Vac followed by Mop").join(" · ") : event.detail;
     steps.push({at: event.at, label: room ? "Clean " + event.label.slice(9) : dockLabels[event.label] ?? event.label, detail});
