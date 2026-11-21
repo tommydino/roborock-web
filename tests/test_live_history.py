@@ -11,6 +11,17 @@ from robot import DeviceController, S
 
 
 class LiveTimelineTest(unittest.IsolatedAsyncioTestCase):
+    def test_run_detail_reads_observed_events_once(self):
+        history = History(None)
+        now = int(time.time())
+        history.add(Run("run-1", now - 100, now))
+        with patch.object(history, "_events_for", wraps=history._events_for) as events_for:
+            detail = history.detail("run-1")
+        self.assertEqual(detail["events"], [])
+        self.assertEqual(detail["timeline_source"], "summary")
+        events_for.assert_called_once()
+        history._observations.close()
+
     async def test_detailed_timeline_capture_is_scheduled_once(self):
         history = History(None)
         device = SimpleNamespace(duid="test", v1_properties=None)
