@@ -48,8 +48,10 @@ export function groupObstacles(obstacles: Obstacle[], scale: number): ObstacleGr
     const counts = new Map<string, number>();
     for (const i of items) counts.set(i.label, (counts.get(i.label) ?? 0) + 1);
     let title = [...counts].map(([label, n]) => (n > 1 ? `${label} ×${n}` : label)).join(", ");
-  if (kind === "obstacle" && !title.includes("Roborock did not report")) title += ": something it found and steered around";
-    if (items.some((i) => i.photo)) title += " (photo in the Roborock app)";
+    title += kind === "obstacle"
+      ? " – Roborock detected something here and steered around it, but did not provide a name"
+      : " – detected and avoided by the robot";
+    if (items.some((i) => i.photo)) title += ". Photo available in the Roborock app";
     return { x: xs / items.length, y: ys / items.length, kind, count: items.length, title };
   });
 }
