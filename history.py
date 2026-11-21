@@ -249,6 +249,7 @@ class History:
             "record_details": run.record_details,
             "events": self._events_for(run),
             "device_timeline": timeline_rows(run.device_events, rooms) if run.device_events else None,
+            "timeline_source": "robot" if run.device_events else "observed" if self._events_for(run) else "summary",
             "route": route, "map": asset,
         }
 
