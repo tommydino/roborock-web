@@ -54,6 +54,33 @@ def field(fields, key):
     return None
 
 
+def event_fields(value):
+    """Decode the JSON-encoded event payload used by newer Saros models."""
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except (TypeError, ValueError):
+            return None
+    return value if isinstance(value, (dict, list)) else None
+
+
+def merged_events(events):
+    """Join protocol fragments that share the same timestamp and event code."""
+    merged = []
+    by_key = {}
+    valid = (event for event in events if isinstance(event, dict))
+    for event in sorted(valid, key=lambda item: number(item.get("t")) or 0):
+        fields = event_fields(event.get("e"))
+        key = (number(event.get("t")), number(event.get("i")))
+        if key in by_key and isinstance(fields, dict) and isinstance(by_key[key]["e"], dict):
+            by_key[key]["e"].update(fields)
+            continue
+        item = {**event, "e": fields}
+        merged.append(item)
+        by_key[key] = item
+    return merged
+
+
 def attribute(fields, key):
     return number(field(fields, key))
 
@@ -75,6 +102,8 @@ def cleaning_plan(fields):
         details.append({1: "High Coverage", 2: "Less Collision"}.get(collision))
     if attribute(fields, 8) == 1:
         details.append("Vac followed by Mop")
+    elif attribute(fields, 3) is not None and attribute(fields, 4) is not None:
+        details.append(clean_settings(fields)["mode"])
     return details
 
 
@@ -91,7 +120,7 @@ def clean_settings(fields):
     repeat = attribute(fields, 6)
     mop_type = attribute(fields, 9)
     mop_power = attribute(fields, 11)
-    mode = "Vacuum" if water == 0 else "Mop" if fan == 5 else "Vacuum & Mop"
+    mode = "Vacuum" if water == 0 else "Mop" if fan == 5 else "Vac & Mop"
     return {
         "mode": mode,
         "clean_mode": fan + 100 if fan is not None else None,
@@ -107,7 +136,7 @@ def timeline_rows(events, rooms):
     rows = []
     replenish = None
     start_seen = False
-    for event in sorted(events, key=lambda item: number(item.get("t")) or 0):
+    for event in merged_events(events):
         at = number(event.get("t"))
         if at is None or at <= 0:
             continue
