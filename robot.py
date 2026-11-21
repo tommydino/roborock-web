@@ -247,6 +247,7 @@ class DeviceController:
         self._history_at = 0.0
         self._timeline_lock = asyncio.Lock()
         self._timeline_retry: dict[str, float] = {}
+        self._timeline_tasks: dict[str, asyncio.Task] = {}
         self._record_maps_loaded: set[str] = set()
         self._import_lock = asyncio.Lock()
         self._import_queue: list[int] = []
@@ -658,6 +659,7 @@ class DeviceController:
                 if latest and latest.events:
                     run.events = latest.events
                 self.history.add(run, map_asset(run_map, self._room_names) if run_map and run.route else None)
+                self._schedule_timeline(run.id)
             self._import_queue = [rid for rid in ids[1:RECENT_RUNS] if not self.history.has(str(rid))
                                   and rid >= time.time() - KEEP_DAYS * 86400]
         if self._import_queue:
@@ -896,6 +898,34 @@ class DeviceController:
                 self.history.add(dataclasses.replace(current, device_events=events))
                 self._timeline_retry.pop(run.id, None)
 
+    def _schedule_timeline(self, run_id: str) -> None:
+        """Fetch the app-grade event list after a run without blocking the UI.
+
+        A newly completed run can appear in the index before get_clean_detail
+        is ready. Retrying here preserves its detailed timeline even when
+        nobody opens History immediately afterwards.
+        """
+        task = self._timeline_tasks.get(run_id)
+        if not self._supports_timeline() or (task is not None and not task.done()):
+            return
+        task = asyncio.create_task(self._capture_timeline(run_id))
+        self._timeline_tasks[run_id] = task
+        task.add_done_callback(lambda _task, rid=run_id: self._timeline_tasks.pop(rid, None))
+
+    async def _capture_timeline(self, run_id: str) -> None:
+        for delay in (5, 30, 90, 300):
+            await asyncio.sleep(delay)
+            run = next((item for item in self.history.runs if item.id == run_id), None)
+            if run is None or run.device_events:
+                return
+            # The foreground guard prevents repeated clicks from hammering the
+            # robot. This task deliberately follows its own measured schedule.
+            self._timeline_retry.pop(run_id, None)
+            await self._load_timeline(run)
+            current = next((item for item in self.history.runs if item.id == run_id), None)
+            if current is None or current.device_events:
+                return
+
     async def run_detail(self, run_id: str) -> dict[str, Any] | None:
         run = next((item for item in self.history.runs if item.id == run_id), None)
         if run and run_id.isdigit():
@@ -1007,13 +1037,21 @@ class DeviceController:
             # Fetch lightweight records only. Route maps are loaded when opened.
             for offset in range(0, len(missing), 2):
                 await asyncio.gather(*(self._import_record(rid) for rid in missing[offset:offset + 2]))
+            # Fill exact timelines independently of the History screen. Limit
+            # startup work to recent runs; older ones are fetched when opened.
+            for rid in ids[:5]:
+                run = next((item for item in self.history.runs if item.id == str(rid)), None)
+                if run is not None and not run.device_events:
+                    self._schedule_timeline(run.id)
         return self.history.list()
 
     async def _import_record(self, rid: int) -> None:
         try:
             record = await self._p.clean_summary.get_clean_record(rid)
             if record and not self.history.has(str(rid)) and str(rid) in {str(i) for i in self._p.clean_summary.records or []}:
-                self.history.add(_run(rid, record, None, "robot", None))
+                run = _run(rid, record, None, "robot", None)
+                self.history.add(run)
+                self._schedule_timeline(run.id)
         except Exception as err:
             _LOGGER.info("Could not import cleaning run %s: %s", rid, err)
 
