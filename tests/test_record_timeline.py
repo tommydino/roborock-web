@@ -126,6 +126,13 @@ class RecordTimelineTest(unittest.TestCase):
                               {"t": 3, "i": 42, "e": {"2": 36}}], {})
         self.assertEqual(rows, [])
 
+    def test_malformed_string_event_is_ignored_without_losing_valid_events(self):
+        rows = timeline_rows([
+            {"t": 1, "i": 25, "e": "not-json"},
+            {"t": 2, "i": 12, "e": "{}"},
+        ], {})
+        self.assertEqual([row["label"] for row in rows], ["Start cleaning", "Cleaning Finished"])
+
     def test_existing_run_loads_and_persists_independently_of_map_and_summary(self):
         begin = int(time.time()) - 300
         rid = str(begin)
