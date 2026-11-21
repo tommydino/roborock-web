@@ -16,7 +16,6 @@ import sqlite3
 import statistics
 import time
 import zlib
-
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
@@ -243,6 +242,7 @@ class History:
         device_timeline = timeline_rows(run.device_events, rooms) if run.device_events else None
         wash_events = sum(row.get("label") == "Wash Mop" for row in (device_timeline or []))
         wash_count = max(run.wash_count or 0, wash_events) if run.wash_count is not None or wash_events else None
+        events = self._events_for(run)
         return {
             "id": run.id, "begin": run.begin, "end": run.end, "duration": run.duration,
             "area": run.area, "complete": run.complete, "mode": run.mode, "source": run.source,
@@ -250,9 +250,9 @@ class History:
             "avoid_count": run.avoid_count, "wash_count": wash_count,
             "dust_collected": run.dust_collected,
             "record_details": run.record_details,
-            "events": self._events_for(run),
+            "events": events,
             "device_timeline": device_timeline,
-            "timeline_source": "robot" if run.device_events else "observed" if self._events_for(run) else "summary",
+            "timeline_source": "robot" if run.device_events else "observed" if events else "summary",
             "route": route, "map": asset,
         }
 
