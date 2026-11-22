@@ -8,6 +8,7 @@ import { preload3D } from "./map/views";
 import { renderActions, renderSkeletons, setConn, setStatus } from "./panels";
 import { loadSettings } from "./settings";
 import { S } from "./state";
+import { idleRefreshMs, loopRefreshMs, mapRefreshMs } from "./refresh-policy";
 import type { Auth, Device, MapResponse, Status } from "./types";
 
 export async function refreshAuth(): Promise<void> {
@@ -204,9 +205,9 @@ export function startLoops(): void {
       void pollStatus();
       void pollMap();
     }
-    window.setTimeout(poll, refreshInterval());
+    window.setTimeout(poll, loopRefreshMs(S.status?.phase));
   };
-  window.setTimeout(poll, refreshInterval());
+  window.setTimeout(poll, loopRefreshMs(S.status?.phase));
   document.addEventListener("visibilitychange", () => {
     if (document.hidden) return;
     void pollStatus();
@@ -243,16 +244,14 @@ function warmUp(): void {
 
 function refreshInterval(): number {
   try {
-    const value = Number(localStorage.getItem("map-refresh-seconds"));
-    return [10, 20, 30, 60].includes(value) ? value * 1000 : 20000;
+    return idleRefreshMs(Number(localStorage.getItem("map-refresh-seconds")));
   } catch {
-    return 20000;
+    return idleRefreshMs(20);
   }
 }
 
 function mapInterval(): number {
-  const ph = S.status?.phase;
-  return ph === "cleaning" || ph === "returning" ? 3000 : 20000;
+  return mapRefreshMs(S.status?.phase, refreshInterval());
 }
 
 export async function pollMap(force = false): Promise<void> {

@@ -5,6 +5,9 @@ import {
   advanceReplay,
   deleteHistoryRun,
   loadHistoryRun,
+  idleRefreshMs,
+  loopRefreshMs,
+  mapRefreshMs,
   runDetailHtml,
   runTimeline,
   selectRuns,
@@ -131,4 +134,14 @@ test("history detail keeps its visual component contract", async () => {
     timelineOrder: [...contract.timelineOrder].sort((a, b) => a - b),
     summaryFooter: true,
   });
+});
+
+test("live map uses the fast refresh policy only while the robot is active", () => {
+  assert.equal(idleRefreshMs(20), 20_000);
+  assert.equal(idleRefreshMs(7), 20_000);
+  assert.equal(mapRefreshMs("idle", 60_000), 60_000);
+  assert.equal(mapRefreshMs("cleaning", 60_000), 3000);
+  assert.equal(mapRefreshMs("returning", 60_000), 3000);
+  assert.equal(loopRefreshMs("idle"), 5000);
+  assert.equal(loopRefreshMs("cleaning"), 3000);
 });
