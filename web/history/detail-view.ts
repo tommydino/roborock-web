@@ -141,6 +141,7 @@ export interface DetailViewState {
   selectedRunId: string | null;
   selectedRun: RunDetail | null;
   fetchingHistoryMap: boolean;
+  loadError: string | null;
   routeSpeed: number;
   routeProgress: number;
   appTimeline: string;
@@ -148,9 +149,10 @@ export interface DetailViewState {
 }
 
 export function runDetailHtml(state: DetailViewState): string {
-  const { selectedRunId, selectedRun, fetchingHistoryMap, routeSpeed, routeProgress, appTimeline, transcript } = state;
+  const { selectedRunId, selectedRun, fetchingHistoryMap, loadError, routeSpeed, routeProgress, appTimeline, transcript } = state;
   if (!selectedRunId) return "";
-  if (!selectedRun) return `<section class="run-detail"><div class="history-head"><b>Cleaning run</b><button class="btn-soft" data-run-close>Close</button></div><p class="muted">Loading run details…</p></section>`;
+  if (!selectedRun) return `<section class="run-detail"><div class="history-head"><b>Cleaning run</b><button class="btn-soft" data-run-close>Close</button></div>
+    ${loadError ? `<div class="run-no-route"><p>${esc(loadError)}</p><button class="btn-soft" data-run-retry="${esc(selectedRunId)}">Try again</button></div>` : `<p class="muted">Loading run details…</p>`}</section>`;
   const run = selectedRun;
   const clock = (ts: number) => new Date(ts * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
   const duration = run.duration ?? Math.max(0, run.end - run.begin);

@@ -211,6 +211,22 @@ def create_app(demo: bool, data_dir: Path | None = None) -> FastAPI:
     async def runs(duid: str):
         return await (await ctrl(duid)).runs()
 
+    @app.get("/api/devices/{duid}/history-backup")
+    async def history_backup(duid: str):
+        data = (await ctrl(duid)).history.export_backup()
+        return JSONResponse(
+            data,
+            headers={"Content-Disposition": 'attachment; filename="roborock-history-backup.json"'},
+        )
+
+    @app.post("/api/devices/{duid}/history-backup")
+    async def restore_history_backup(duid: str, body: dict[str, Any] = Body(...)):
+        try:
+            (await ctrl(duid)).history.import_backup(body)
+        except (TypeError, ValueError) as err:
+            raise HTTPException(400, str(err)) from err
+        return {"ok": True}
+
     @app.get("/api/devices/{duid}/runs/{run_id}")
     async def run_detail(duid: str, run_id: str, cached: bool = False):
         controller = await ctrl(duid)

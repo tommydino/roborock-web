@@ -16,7 +16,7 @@ import sqlite3
 import statistics
 import time
 import zlib
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, fields
 from pathlib import Path
 from typing import Any
 
@@ -33,6 +33,8 @@ KEEP_DAYS = 120
 DEFAULT_INTERVAL = 7  # days a room can go before it's due
 INTERVALS = [1, 2, 3, 7, 14]  # what the app offers
 RECENT_RUNS = 30  # how many runs the app lists
+HISTORY_VERSION = 1
+BACKUP_FORMAT = "roborock-web-history-v1"
 
 Line = list[tuple[float, float]]
 
@@ -164,10 +166,65 @@ class History:
                 self.maps = raw.get("maps") or {}
                 self.intervals = {str(k): int(v) for k, v in (raw.get("intervals") or {}).items()}
                 for r in raw.get("runs") or []:
-                    grid = r.pop("grid", None)
-                    self.runs.append(Run(**r, grid=Grid(**grid) if grid else None))
+                    self.runs.append(self._decode_run(r))
             except (OSError, ValueError, TypeError) as err:
                 _LOGGER.warning("Ignoring unreadable cleaning history %s: %s", path, err)
+
+    @staticmethod
+    def _decode_run(value: dict[str, Any]) -> Run:
+        """Read old and new history rows while ignoring fields from newer releases."""
+        row = dict(value)
+        grid = row.pop("grid", None)
+        allowed = {field.name for field in fields(Run)} - {"grid"}
+        clean = {key: item for key, item in row.items() if key in allowed}
+        if "device_timeline" in row and "device_events" not in clean:
+            clean["device_events"] = row["device_timeline"]
+        return Run(**clean, grid=Grid(**grid) if grid else None)
+
+    def export_backup(self) -> dict[str, Any]:
+        events = [
+            {"at": at, "label": label, **({"detail": detail} if detail is not None else {})}
+            for at, label, detail in self._observations.execute(
+                "SELECT at, label, detail FROM events ORDER BY at, rowid"
+            )
+        ]
+        return {
+            "format": BACKUP_FORMAT,
+            "version": HISTORY_VERSION,
+            "created": self.created,
+            "intervals": self.intervals,
+            "runs": [asdict(run) for run in self.runs],
+            "maps": self.maps,
+            "observations": events,
+        }
+
+    def import_backup(self, value: dict[str, Any]) -> None:
+        """Replace local history with a validated backup from this application."""
+        if value.get("format") != BACKUP_FORMAT:
+            raise ValueError("This is not a Roborock Web history backup")
+        if int(value.get("version") or 0) > HISTORY_VERSION:
+            raise ValueError("This backup was created by a newer Roborock Web version")
+        runs = value.get("runs")
+        maps = value.get("maps")
+        observations = value.get("observations") or []
+        if not isinstance(runs, list) or not isinstance(maps, dict) or not isinstance(observations, list):
+            raise ValueError("The history backup is incomplete")
+        decoded = [self._decode_run(run) for run in runs if isinstance(run, dict)]
+        if len(decoded) != len(runs):
+            raise ValueError("The history backup contains an invalid run")
+        restored_events: list[tuple[int, str, str | None]] = []
+        for event in observations:
+            if not isinstance(event, dict) or not isinstance(event.get("label"), str):
+                raise ValueError("The history backup contains an invalid event")
+            restored_events.append((int(event["at"]), event["label"], event.get("detail")))
+        self.created = int(value.get("created") or time.time())
+        self.intervals = {str(key): int(days) for key, days in (value.get("intervals") or {}).items()}
+        self.runs = sorted(decoded, key=lambda run: run.begin)
+        self.maps = maps
+        with self._observations as db:
+            db.execute("DELETE FROM events")
+            db.executemany("INSERT INTO events (at, label, detail) VALUES (?, ?, ?)", restored_events)
+        self._changed()
 
     @property
     def since(self) -> int:
@@ -289,7 +346,7 @@ class History:
         self.rev += 1
         if not self._path:
             return
-        data = {"created": self.created, "intervals": self.intervals, "runs": [asdict(r) for r in self.runs], "maps": self.maps}
+        data = {"version": HISTORY_VERSION, "created": self.created, "intervals": self.intervals, "runs": [asdict(r) for r in self.runs], "maps": self.maps}
         self._path.parent.mkdir(parents=True, exist_ok=True)
         tmp = self._path.with_suffix(".tmp")
         tmp.write_text(json.dumps(data, separators=(",", ":")))
