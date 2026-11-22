@@ -12,7 +12,11 @@ export function historyCard(summary: Settings["summary"]): string {
   }
   if (!summary) content = `<p class="muted">Robot history summary isn't available right now. Locally saved runs are shown below.</p>`;
   return `<div class="card history-card" id="history-runs"><div class="card-head"><h3 class="card-title">${icon("history")}History</h3></div>${content}
-    <div id="history-runs-list"><p class="muted">Loading run history…</p></div><div id="history-run-detail"></div></div>`;
+    <div id="history-runs-list"><p class="muted">Loading run history…</p></div><div id="history-run-detail"></div>
+    <details class="history-backup"><summary>History backup</summary><p class="muted">Save or restore locally stored runs, maps and timeline events.</p>
+      <a class="btn-soft" href="#" data-history-export>Download backup</a>
+      <label class="btn-soft">Restore backup<input class="visually-hidden" type="file" accept=".json,application/json" data-history-import></label>
+    </details></div>`;
 }
 
 export function historyListHtml(runs: RunSummary[], filteredRuns: RunSummary[], loading: boolean, filters: HistoryFilters): string {
