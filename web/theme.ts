@@ -1,4 +1,4 @@
-// Light or dark: follow the Mac (Auto), or pick one. The choice is remembered in this
+// Light (the default), dark, or follow the Mac (Auto). The choice is remembered in this
 // browser. A small script in index.html applies it before the first paint; this keeps
 // it up to date and tells the views that draw with theme colours to redraw.
 
@@ -7,16 +7,16 @@ import { $, $$, icon, toast } from "./dom";
 export type ThemePref = "auto" | "light" | "dark";
 
 const media = window.matchMedia("(prefers-color-scheme: dark)");
-const LABEL: Record<ThemePref, string> = { auto: "Auto (follows your Mac)", light: "Light", dark: "Dark" };
+const LABEL: Record<ThemePref, string> = { light: "Light", dark: "Dark", auto: "Auto (follows your Mac)" };
 const ICON: Record<ThemePref, string> = { auto: "contrast", light: "sun", dark: "moon" };
 const NEXT: Record<ThemePref, ThemePref> = { auto: "light", light: "dark", dark: "auto" };
 
 export function themePref(): ThemePref {
   try {
     const v = localStorage.getItem("theme");
-    return v === "light" || v === "dark" ? v : "auto";
+    return v === "auto" || v === "dark" ? v : "light";
   } catch {
-    return "auto";
+    return "light";
   }
 }
 
@@ -28,6 +28,7 @@ function applyTheme(): void {
     root.dataset.theme = theme;
     document.dispatchEvent(new CustomEvent("themechange"));
   }
+  document.getElementById("theme-color")?.setAttribute("content", theme === "dark" ? "#09090b" : "#f4f6f9");
   renderThemeControls();
 }
 
@@ -46,7 +47,10 @@ function renderThemeControls(): void {
   btn.innerHTML = icon(ICON[pref]);
   btn.title = `Theme: ${LABEL[pref]}. Click for ${LABEL[NEXT[pref]].split(" ")[0]}`;
   btn.setAttribute("aria-label", `Theme: ${LABEL[pref]}`);
-  $$<HTMLButtonElement>("[data-theme-pref]").forEach((b) => b.classList.toggle("active", b.dataset.themePref === pref));
+  $$<HTMLButtonElement>("[data-theme-pref]").forEach((b) => {
+    b.classList.toggle("active", b.dataset.themePref === pref);
+    b.setAttribute("aria-pressed", String(b.dataset.themePref === pref));
+  });
 }
 
 $("#theme-btn").addEventListener("click", () => {
@@ -67,7 +71,7 @@ applyTheme();
 /** The segmented Auto / Light / Dark control, for Settings. */
 export function themeChoice(): string {
   const pref = themePref();
-  return `<div class="seg small theme-choice">${(Object.keys(LABEL) as ThemePref[])
-    .map((p) => `<button data-theme-pref="${p}" class="${p === pref ? "active" : ""}">${icon(ICON[p])}${p === "auto" ? "Auto" : LABEL[p]}</button>`)
+  return `<div class="seg small theme-choice" role="group" aria-label="Theme">${(Object.keys(LABEL) as ThemePref[])
+    .map((p) => `<button data-theme-pref="${p}" class="${p === pref ? "active" : ""}" aria-pressed="${p === pref}">${icon(ICON[p])}${p === "auto" ? "Auto" : LABEL[p]}</button>`)
     .join("")}</div>`;
 }

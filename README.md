@@ -2,12 +2,13 @@
 
 A calm web app for your Roborock robot vacuum that runs on your own computer. It's built for a big screen, with a live map you can pan, zoom and turn in 3D, and it works on a phone too.
 
-![The app with the demo robot: status, passes and cleaning mode on the left, the live map on the right](docs/screenshot.png)
+![The app with the demo robot: status, cleaning mode, the dock and the main buttons on the left, the live map on the right](docs/screenshot.png)
 
 Try it without a robot or an account: `./start.command --demo`.
 
+- **One screen**: the robot's status, cleaning mode, the dock and the main buttons sit in one panel beside the map, so on a laptop nothing you need is below the fold. It's light by default; Dark and Auto (follows your Mac) are on the theme button and in Settings → Appearance.
 - **Live map** with room names, the robot and the dock. It updates every few seconds while the robot cleans.
-- **Click rooms** to clean just those, **drag a zone**, or **click a spot** to send the robot there. Pick the passes above the button: 1–3 for rooms and zones (set when they start), 1 or 2 when cleaning everywhere. That one is the robot's own setting, shared with the Roborock app, so you can change it mid-clean too.
+- **Click rooms** to clean just those, **drag a zone**, or **click a spot** to send the robot there (**Esc** lets go of it again). Pick the passes above the button: 1–3 for rooms and zones (set when they start), 1 or 2 when cleaning everywhere. That one is the robot's own setting, shared with the Roborock app, so you can change it mid-clean too.
 - **Move and zoom** the map like Google Maps: two-finger swipe, pinch, drag.
 - **Three views**: the colour map, a **3D view** you can turn around, and a **floor plan** with room sizes.
 - **What the robot saw**: carpets, obstacles it spotted (cables, shoes, pet mess…), where it mopped, and its route, on every view.
@@ -76,12 +77,13 @@ While you're drawing a cleaning zone or editing walls, dragging draws instead of
 
 ## Map views
 
-Switch views with **2D / 3D / Plan / Freshness** above the map. The app remembers your choice.
+Switch views with **2D / 3D / Plan / Freshness / Suspects** above the map. The app remembers your choice.
 
-- **2D**: the colour map, with the robot's path.
+- **2D**: the colour map: every room in its own jewel tone (they glow on black in the dark theme), with the robot's path.
 - **3D**: your home with raised walls and furniture, the robot and dock as little models, and invisible walls and zones as tinted glass. **Drag to turn** it, swipe with two fingers to move, pinch to zoom, and click rooms to pick them. Zones, go-to and editing switch back to 2D. The 3D library ([three.js](https://threejs.org), MIT) is bundled into a separate file that only loads the first time you open 3D.
-- **Plan**: an architect-style drawing with walls, carpets and a 1 m grid. Each room shows its floor area, and the footer adds up the area of the whole home or of the rooms you picked.
+- **Plan**: a blueprint, with each room outlined in its colour, carpets and a 1 m grid. Each room shows its floor area, and the footer adds up the area of the whole home or of the rooms you picked.
 - **Freshness**: the floor coloured by how long ago each spot was cleaned. See below.
+- **Suspects**: things that come and go on your floor, found from spots the robot usually reaches but sometimes can't. See below.
 
 ### What's on the map
 
@@ -102,6 +104,23 @@ The phone app tells you what the robot is doing now. Freshness tells you what it
 - **The panel** next to the map lists every room with when it was cleaned and mopped. Set how often each room should be cleaned (every day to every two weeks). Rooms past that are marked **Due**, and **Clean due rooms** sends the robot to just those, with your current cleaning mode. Click a room to pick it for a clean.
 
 **Settings → History** lists recent runs with their duration, area and cleaning mode. Open a run for its map, route playback and timeline. Choose 1×, 3× or 5× playback speed; zoom with the map controls or mouse wheel, and drag the map while zoomed. Use the trash button beside a run to delete it from the robot and this app; the app asks the robot to delete the record and removes its local copy only after the robot confirms it. For supported robots, the app retrieves the detailed cleaning events from the robot, including room cleaning, mop washes and automatic re-mopping. If those events are unavailable, it shows events sampled while the app was running; room transition times from map updates are approximate. You can also import or edit an app timeline for one run, saved in this browser. Use **Download raw run data for timeline analysis** to export the record, device feature flags and original history map for investigation. This export includes private floorplan data. Some robots or individual records may not provide a route map. Playback timing is approximate because Roborock doesn't provide timestamps for individual route points. A run counts as cleaning a room once it covered half of its floor. History stays on your computer and keeps the last 120 days.
+
+## Suspects
+
+A laundry basket, a bag, a chair pulled out: things that stand on the floor for a few days get in the robot's way. Suspects finds them in the same history Freshness uses, from spots the robot reaches on most runs like it but missed, as the same hole, on several runs in a row.
+
+- **The map** marks each suspect with a numbered evidence tag: red while it's still there (**At large**), orange just after it left, yellow when it's long gone, grey once its case is closed. Hatched spots are **permanent residents**, floor it never reaches at all (usually under furniture).
+- **The panel** has a wanted poster for each one: its rough size, room, how often it was in the way, and first and last seen. **Name a suspect** ("Laundry basket") and the name sticks to that spot. A named suspect that's been clear for 3 runs is **Case closed**.
+- **The tape** steps through the runs. Press play to watch who arrived, stood there and left.
+- A **person of interest** left a slightly different hole each time, so it might just be the robot taking another line.
+
+Rooms need 10 finished runs with a map before they can have suspects. Runs are compared only with runs that covered the room in a similar way, so a schedule that keeps off the walls isn't mistaken for clutter. Suspects are guesses from where the robot couldn't go, not things it saw.
+
+## AI assistant (optional)
+
+Press **⌘K** (Ctrl+K) or **Ask** above the map and type, or say, what you want: "vacuum the kitchen and hallway twice", "send it home", "what got missed this week?". Claude (Opus 5.5) turns it into a plan using only the app's own actions, highlights the rooms on the map, and waits: **nothing moves until you press Run**. Each run in Freshness → Recent runs also gets an **Explain** link.
+
+It's off until you add an Anthropic API key in **Settings → AI assistant** (saved in `data/anthropic.json`, readable only by you), or have `ANTHROPIC_API_KEY` set. When you use it, your request, room names and cleaning history are sent to Anthropic. Everything else works without it.
 
 ## Editing the map
 
@@ -168,8 +187,9 @@ Python changes need a server restart. If the app notices code changed since it s
 | `robot.py` | Login session and robot control (python-roborock) |
 | `maprender.py` | Turns the robot's raw map into a soft PNG, a room mask, and walls/zones for the editor |
 | `history.py` | Cleaning history: each run's coverage, and room freshness worked out from it |
+| `suspects.py` | Suspects: things that come and go on the floor, worked out from the same history |
 | `demo.py` | The simulated robot behind `--demo` |
-| `web/` | The interface in TypeScript: `main.ts` (start-up), `panels.ts` (sidebar), `session.ts` (sign-in, polling), `settings.ts`, `freshness.ts`, `map/` (map, pan & zoom, editor, views, fit), `map3d.ts` (3D) |
+| `web/` | The interface in TypeScript: `main.ts` (start-up), `panels.ts` (the control panel: status, mode, dock and the main buttons), `session.ts` (sign-in, polling), `settings.ts`, `freshness.ts`, `suspects.ts`, `map/` (map, pan & zoom, editor, views, fit), `map3d.ts` (3D) |
 | `static/` | `index.html`, `styles.css`, and the built bundle in `dist/` |
 
 ## License

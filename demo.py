@@ -16,6 +16,7 @@ from typing import Any
 from history import History, Run, estimate_model, freshness, grid_from_lines, map_asset, route_from_map
 from maprender import MapRenderer, RenderedMap
 from robot import RoomNames, build_restriction_payload
+from suspects import pin_name, suspects
 
 W, H = 170, 124  # map size in 50mm blocks
 TOP, LEFT = 450, 440
@@ -238,11 +239,24 @@ def _doors(a: tuple[float, float], b: tuple[float, float]) -> list[tuple[float, 
 UNREACHABLE: list[tuple[int, int, int, int]] = [(4, 96, 28, 120), (20, 46, 58, 54), (118, 22, 146, 30), (148, 102, 166, 120)]
 
 
-def _lane(x0: float, x1: float, a: float, b: float, y: float) -> list[tuple[float, float]]:
+# Things that stood on the floor for a while, for the Suspects view: (spot, from, to in hours
+# ago). A laundry basket by the kitchen door that's gone now, a shopping bag at the far end of
+# the kitchen that's still there, a beanbag in the living room that's gone (and has a name),
+# and a bag dropped in the hallway once (one run isn't enough to be a suspect).
+CLUTTER: list[tuple[tuple[int, int, int, int], float, float]] = [
+    ((100, 8, 111, 19), 400, 150),
+    ((148, 36, 158, 46), 130, 0),
+    ((62, 28, 74, 40), 490, 300),
+    ((100, 88, 108, 96), 150, 140),
+]
+CLUTTER_NAMES = [((68, 34), "Beanbag")]  # demo blocks, as the user would have named it
+
+
+def _lane(x0: float, x1: float, a: float, b: float, y: float, clutter: list[tuple[int, int, int, int]] = ()) -> list[tuple[float, float]]:  # type: ignore[assignment]
     """One left-to-right lane from a to b at height y, inside a room spanning x0..x1, that
     stops short of what the robot can't reach by a wall and drives around the rest."""
     pts: list[tuple[float, float]] = []
-    for ex0, ey0, ex1, ey1 in sorted(UNREACHABLE):
+    for ex0, ey0, ex1, ey1 in sorted([*UNREACHABLE, *clutter]):
         if not (ey0 - 3 < y < ey1 + 3 and ex0 < b and ex1 > a):
             continue
         if ex0 <= x0:  # against the left wall: start past it
@@ -256,13 +270,13 @@ def _lane(x0: float, x1: float, a: float, b: float, y: float) -> list[tuple[floa
     return pts + [(a, y), (b, y)] if b > a else pts
 
 
-def _lanes(rect: tuple[float, float, float, float], step: float = 4) -> list[tuple[float, float]]:
+def _lanes(rect: tuple[float, float, float, float], step: float = 4, clutter: list[tuple[int, int, int, int]] = ()) -> list[tuple[float, float]]:  # type: ignore[assignment]
     """Back-and-forth lanes over a room, the way the robot cleans one."""
     x0, y0, x1, y1 = rect
     pts: list[tuple[float, float]] = []
     y, flip = y0 + 3, False
     while y <= y1 - 3:
-        row = _lane(x0, x1, x0 + 3, x1 - 3, y)
+        row = _lane(x0, x1, x0 + 3, x1 - 3, y, clutter)
         pts.extend(reversed(row) if flip else row)
         y += step
         flip = not flip
@@ -296,6 +310,9 @@ HISTORY: list[tuple[float, list[int], bool]] = [
     (242, [17], True), (266, [16, 20, 21], False), (314, [17, 19], True), (362, [16, 17, 20, 21, 19], True),
     (386, [17], True), (434, [16, 17, 20], False), (482, [16, 17, 20, 18, 19, 21], True),
 ]
+# Before that, four more weeks of the usual: the kitchen every day, the living room and the
+# hallway every other day, so there's enough history to tell clutter from the route.
+HISTORY += [(24 * d + 3, [17, 16, 20] if d % 2 else [17], d % 2 == 0) for d in range(21, 49)]
 INTERVALS = {17: 2, 16: 3, 20: 3, 21: 3, 18: 7, 19: 7}  # days between cleans, per room
 
 
@@ -307,8 +324,9 @@ def _history() -> tuple[History, list[tuple[float, float]]]:
     last: list[tuple[float, float]] = []
     for hours, rooms, mopped in reversed(HISTORY):
         last = _clean_path(rooms)
+        clutter = [spot for spot, start, end in CLUTTER if start >= hours >= end]
         # Only the lanes count as cleaning; driving between rooms doesn't.
-        lines = [line for rid in rooms for line in _grid_lines(_lanes(ROOMS[rid][1]))]
+        lines = [line for rid in rooms for line in _grid_lines(_lanes(ROOMS[rid][1], clutter=clutter))]
         area = _area(rooms)
         # Mopping is slower, and the mop gets washed on the way: about 80 s per m² against 50.
         duration = int(150 + area * 80) if mopped else int(90 + area * 50)
@@ -324,6 +342,8 @@ def _history() -> tuple[History, list[tuple[float, float]]]:
     history.created = history.runs[0].begin
     for rid, days in INTERVALS.items():
         history.set_interval(0, rid, days)
+    for (x, y), name in CLUTTER_NAMES:
+        history.name_suspect(0, LEFT + x, TOP + y, name)  # demo blocks (y up) to robot blocks
     return history, last
 
 
@@ -344,6 +364,7 @@ class DemoController:
         self.error: str | None = None  # set with the demo_error action, to try the error help
         self.dock_error: str | None = None
         self._fresh: tuple[tuple, dict[str, Any]] | None = None
+        self._sus: tuple[tuple, dict[str, Any]] | None = None
         self._run_begin = 0.0
         self._route: list[tuple[float, float]] = []
         self._route_kind = ""
@@ -623,6 +644,18 @@ class DemoController:
     async def delete_run(self, run_id: str) -> None:
         if not self.history.remove(run_id):
             raise ValueError("Cleaning run not found")
+
+    async def suspects(self) -> dict[str, Any]:
+        self._tick()
+        m = self._rendered()
+        key = (self.history.rev, m.image_version)
+        if self._sus is None or self._sus[0] != key:
+            self._sus = (key, await asyncio.to_thread(suspects, self.history, m, 0))
+        return self._sus[1]
+
+    async def name_suspect(self, x: int, y: int, name: str) -> dict[str, Any]:
+        pin_name(self.history, await self.suspects(), 0, x, y, name)
+        return await self.suspects()
 
     async def settings(self) -> dict[str, Any]:
         await asyncio.sleep(0.25)

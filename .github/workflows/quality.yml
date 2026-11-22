@@ -28,6 +28,6 @@ jobs:
       - name: Lint Python
         run: ruff check .
       - name: Test Python
-        run: python -m unittest discover -s tests
+        run: pytest -q
       - name: Check and build TypeScript
         run: npm run check

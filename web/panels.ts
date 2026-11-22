@@ -1,11 +1,11 @@
-// The sidebar: status, the main action buttons, cleaning mode and the dock.
+// The control rail: status, cleaning mode, the dock, and the Go bar (passes and the main buttons).
 
 import { api, devicePath } from "./api";
 import { $, $opt, busyBtn, esc, fmtArea, fmtDuration, human, icon, toast } from "./dom";
 import { DONE, HIDDEN_OPTS, MODE_LABEL, OPT_LABEL, STATE_LABEL, TANK_WARN } from "./labels";
 import { drawSelection, refreshMapOverlays } from "./map/core";
 import { errorHelp } from "./errors";
-import { estimateText, homeArea, loadEstimates, remainingParts, roomsArea, zoneArea } from "./estimate";
+import { estimateParts, homeArea, loadEstimates, remainingParts, roomsArea, zoneArea } from "./estimate";
 import { freshJobChanged } from "./freshness";
 import { notifyEnabled, notifyProblem, notifySupported } from "./notify";
 import { loadSettings } from "./settings";
@@ -15,6 +15,7 @@ import type { Links, ModeOption, Status } from "./types";
 export function setConn(ok: boolean, text: string): void {
   $("#conn").className = "conn " + (ok ? "on" : "off");
   $("#conn-text").textContent = text;
+  $("#conn").title = text; // a long error is cut short in the rail; the whole of it on hover
 }
 
 let lastStatus = "";
@@ -44,7 +45,7 @@ export function setStatus(st: Status): void {
     S.jobRooms = null;
     drawSelection();
   }
-  $("#robot-name").innerHTML = esc(st.name || "Robot") + (S.auth?.demo ? `<span class="demo-badge">Demo</span>` : "");
+  $("#robot-name").innerHTML = `<span class="nm">${esc(st.name || "Robot")}</span>` + (S.auth?.demo ? `<span class="demo-badge">Demo</span>` : "");
   document.title = `${st.name || "Robot"} · ${STATE_LABEL[st.state ?? ""] || human(st.state) || "Roborock"}`;
   if (st.connected === false) setConn(false, "Offline");
   else setConn(true, st.local ? "Local network" : "Via Roborock cloud");
@@ -57,9 +58,9 @@ export function setStatus(st: Status): void {
 }
 
 export function renderSkeletons(): void {
-  $("#status-card").innerHTML = `<div class="skel" style="height:30px;width:55%"></div><div class="skel" style="height:16px;width:35%;margin-top:12px"></div><div class="stats"><div class="skel" style="height:58px"></div><div class="skel" style="height:58px"></div><div class="skel" style="height:58px"></div></div>`;
-  $("#action-card").innerHTML = `<div class="skel" style="height:56px;border-radius:999px"></div>`;
-  $("#mode-card").innerHTML = `<div class="skel" style="height:18px;width:40%"></div><div class="skel" style="height:44px;margin-top:16px"></div><div class="skel" style="height:36px;margin-top:16px"></div>`;
+  $("#status-card").innerHTML = `<div class="status-top"><div><div class="skel" style="height:24px;width:62%"></div><div class="skel" style="height:14px;width:40%;margin-top:8px"></div></div><div class="skel" style="width:var(--ring);height:var(--ring);border-radius:50%"></div></div><div class="skel" style="height:36px;margin-top:var(--stat-gap)"></div>`;
+  $("#action-card").innerHTML = `<div class="skel" style="height:var(--btn-h);border-radius:16px"></div>`;
+  $("#mode-card").innerHTML = `<div class="skel" style="height:14px;width:35%"></div><div class="skel" style="height:var(--seg-h);margin-top:6px;border-radius:999px"></div><div class="skel" style="height:var(--seg-sm-h);margin-top:12px;border-radius:999px"></div><div class="skel" style="height:var(--seg-sm-h);margin-top:12px;border-radius:999px"></div>`;
 }
 
 /* ---------------- status card ---------------- */
@@ -130,10 +131,12 @@ export function renderStatus(): void {
   const st = S.status;
   if (!st) return;
   const el = $("#status-card");
-  if (st.connected === false && st.state == null) {
+  const offline = st.connected === false && st.state == null;
+  el.dataset.phase = offline ? "offline" : st.phase ?? "idle"; // colours the dot before the title
+  if (offline) {
     el.innerHTML = `<div class="status-state">Can't reach robot</div><div class="status-sub">${esc(st.message || "It may be offline or out of Wi‑Fi range.")}</div>
       ${linksLine(st)}
-      <button class="btn-soft" data-act="reconnect" style="margin-top:14px">Reconnect</button>`;
+      <button class="btn-soft" data-act="reconnect">Reconnect</button>`;
     return;
   }
   const b = st.battery ?? 0;
@@ -147,12 +150,12 @@ export function renderStatus(): void {
         <div class="status-state">${esc(STATE_LABEL[st.state ?? ""] || human(st.state))}</div>
         <div class="status-sub">${esc(statusSub(st))}</div>
       </div>
-      <div class="battery" title="Battery">
+      <div class="battery" title="Battery ${b}%${charging ? ", charging" : ""}">
         <div class="ring ${ringCls}">
-          <svg viewBox="0 0 66 66"><circle class="track" cx="33" cy="33" r="27"/><circle class="fill" cx="33" cy="33" r="27" stroke-dasharray="${C}" stroke-dashoffset="${C * (1 - b / 100)}"/></svg>
-          <div class="ring-text">${b}%</div>
+          <svg viewBox="0 0 66 66" aria-hidden="true"><circle class="track" cx="33" cy="33" r="27"/><circle class="fill" cx="33" cy="33" r="27" stroke-dasharray="${C}" stroke-dashoffset="${C * (1 - b / 100)}"/></svg>
+          <div class="ring-text"><i class="batt-glyph" aria-hidden="true" style="--lvl:${b}"></i><span><span class="sr-only">Battery </span>${b}%</span></div>
         </div>
-        ${charging ? `<span class="bolt">${icon("bolt")}Charging</span>` : ""}
+        ${charging ? `<span class="bolt">${icon("bolt")}<span class="sr-only">Charging</span></span>` : ""}
       </div>
     </div>`;
   if (active || st.clean_time) {
@@ -257,18 +260,24 @@ export function renderActions(): void {
   const passAttr = passAct === "start" ? "data-home-passes" : "data-repeat";
   const showStop = !idle || st.job;
   const showDock = ph !== "docked" && ph !== "dock";
+  const est = idle ? estimateParts(jobAreaFor(p), options.length ? n : 1) : null;
+  const passPicker = options.length
+    ? `<div class="repeat" role="group" aria-labelledby="lbl-passes"><span class="label" id="lbl-passes">Passes</span><div class="seg small">${options.map((o) => `<button ${passAttr}="${o}" class="${o === n ? "active" : ""}" aria-pressed="${o === n}">${o}×</button>`).join("")}</div></div>`
+    : "";
+  const estimate = est
+    ? `<div class="estimate" title="About ${est.time} · done by ${est.by}">${icon("clock", "i tiny")}<span>${est.time} · by ${est.by}</span></div>`
+    : "";
+  // Stop, Dock and Find: icon plus a short word; the full name for screen readers and as a tooltip.
+  const side = (act: string, ic: string, label: string, name: string) =>
+    `<button class="btn-icon" data-act="${act}" aria-label="${name}"${name !== label ? ` data-tip="${name}"` : ""}>${icon(ic)}<span>${label}</span></button>`;
   $("#action-card").innerHTML = `
-    ${options.length ? `<div class="repeat"><span class="label" style="margin:0">Passes</span><div class="seg small">${options.map((o) => `<button ${passAttr}="${o}" class="${o === n ? "active" : ""}" aria-pressed="${o === n}">${o}×</button>`).join("")}</div></div>` : ""}
+    ${passPicker || estimate ? `<div class="go-meta">${passPicker}${estimate}</div>` : ""}
     <div class="actions">
       <button class="btn-primary" id="primary-btn">${icon(p.icon)}<span>${esc(p.label)}</span></button>
-      ${showStop ? `<button class="btn-round" data-act="stop" data-tip="Stop" aria-label="Stop">${icon("stop")}</button>` : ""}
-      ${showDock ? `<button class="btn-round" data-act="dock" data-tip="Send to dock" aria-label="Send to dock">${icon("home")}</button>` : ""}
-      <button class="btn-round" data-act="locate" data-tip="Find my robot" aria-label="Find my robot">${icon("bell")}</button>
-    </div>
-    ${idle ? (() => {
-      const est = estimateText(jobAreaFor(p), options.length ? n : 1);
-      return est ? `<div class="estimate">${icon("clock", "i tiny")}${est}</div>` : "";
-    })() : ""}`;
+      ${showStop ? side("stop", "stop", "Stop", "Stop") : ""}
+      ${showDock ? side("dock", "home", "Dock", "Send to dock") : ""}
+      ${side("locate", "bell", "Find", "Find my robot")}
+    </div>`;
   const btn = $<HTMLButtonElement>("#primary-btn");
   btn.onclick = async () => {
     if (!S.status) return;
@@ -354,22 +363,24 @@ export function renderMode(): void {
   const showFan = simple && cur !== "mop";
   const showWater = hasModes && simple && cur !== "vacuum" && m.water_options.length > 0;
   const showMop = hasModes && simple && cur !== "vacuum" && m.mop_options.length > 0;
-  const chips = (opts: ModeOption[], value: number | null, kind: string, extraHide: string[] = []) =>
-    opts
+  // Each setting is a label over one row of segments.
+  const seg = (opts: ModeOption[], value: number | null, kind: string, label: string, ic: string, extraHide: string[] = []) =>
+    `<div class="group"><div class="label" id="lbl-${kind}">${icon(ic)}${label}</div><div class="seg sub" role="group" aria-labelledby="lbl-${kind}">${opts
       .filter((o) => (!HIDDEN_OPTS.has(o.name) && !extraHide.includes(o.name)) || o.code === value)
-      .map((o) => `<button class="chip ${o.code === value ? "active" : ""}" data-${kind}="${o.code}">${esc(OPT_LABEL[o.name] || human(o.name))}</button>`)
-      .join("");
+      .map((o) => `<button data-${kind}="${o.code}" class="${o.code === value ? "active" : ""}" aria-pressed="${o.code === value}">${esc(OPT_LABEL[o.name] || human(o.name))}</button>`)
+      .join("")}</div></div>`;
 
-  let html = `<div class="card-head"><h3 class="card-title">${icon("spark")}Cleaning mode</h3></div>`;
+  let html = "";
   if (hasModes) {
-    html += `<div class="group"><div class="seg">${modes.map((o) => `<button data-cmode="${o}" class="${o === cur ? "active" : ""}">${esc(MODE_LABEL[o] || human(o))}</button>`).join("")}</div>`;
+    html += `<div class="group"><div class="label" id="lbl-cmode">${icon("spark")}Cleaning mode</div>`;
+    html += `<div class="seg mode" role="group" aria-labelledby="lbl-cmode">${modes.map((o) => `<button data-cmode="${o}" class="${o === cur ? "active" : ""}" aria-pressed="${o === cur}">${esc(MODE_LABEL[o] || human(o))}</button>`).join("")}</div>`;
     if (cur === "smart_mode") html += `<div class="note">SmartPlan picks suction, water and route for each room on its own.</div>`;
     if (cur === "custom") html += `<div class="note">Uses the per-room settings you set up in the Roborock app.</div>`;
     html += `</div>`;
   }
-  if (showFan) html += `<div class="group"><div class="label">${icon("fan")}Suction</div><div class="chips">${chips(m.fan_options, fan, "fan", ["off", "gentle"])}</div></div>`;
-  if (showWater) html += `<div class="group"><div class="label">${icon("drop")}Water flow</div><div class="chips">${chips(m.water_options, water, "water", ["off"])}</div></div>`;
-  if (showMop) html += `<div class="group"><div class="label">${icon("route")}Mop route</div><div class="chips">${chips(m.mop_options, mop, "mop")}</div></div>`;
+  if (showFan) html += seg(m.fan_options, fan, "fan", "Suction", "fan", ["off", "gentle"]);
+  if (showWater) html += seg(m.water_options, water, "water", "Water flow", "drop", ["off"]);
+  if (showMop) html += seg(m.mop_options, mop, "mop", "Mop route", "route");
   $("#mode-card").innerHTML = html;
 }
 
@@ -401,10 +412,9 @@ export function renderDock(): void {
   if (d.can_wash) tanks += tank("Clean water", d.clean_water) + tank("Dirty water", d.dirty_water);
   if (d.can_empty) tanks += tank("Dust bag", d.dust_bag);
   const tiles: string[] = [];
-  if (d.can_empty) tiles.push(`<button class="tile" data-act="empty_bin"><span class="ti">${icon("trash")}</span>Empty bin</button>`);
-  if (d.can_wash) tiles.push(`<button class="tile" data-act="wash_mop"><span class="ti">${icon("waves")}</span>Wash mop</button>`);
-  if (d.can_dry) tiles.push(`<button class="tile ${d.drying ? "on" : ""}" data-act="${d.drying ? "dry_stop" : "dry_start"}"><span class="ti">${icon("sun")}</span>${d.drying ? "Stop drying" : "Dry mop"}</button>`);
-  card.innerHTML = `<div class="card-head"><h3 class="card-title">${icon("dock")}Dock</h3></div>
-    <div class="tank-row">${tanks}</div>
-    <div class="dock-grid">${tiles.join("")}</div>`;
+  if (d.can_empty) tiles.push(`<button class="dock-btn" data-act="empty_bin">${icon("trash")}<span>Empty bin</span></button>`);
+  if (d.can_wash) tiles.push(`<button class="dock-btn" data-act="wash_mop">${icon("waves")}<span>Wash mop</span></button>`);
+  if (d.can_dry) tiles.push(`<button class="dock-btn ${d.drying ? "on" : ""}" data-act="${d.drying ? "dry_stop" : "dry_start"}">${icon("sun")}<span>${d.drying ? "Stop drying" : "Dry mop"}</span></button>`);
+  card.innerHTML = `<div class="dock-head"><div class="label" id="lbl-dock">${icon("dock")}Dock</div><div class="tank-row">${tanks}</div></div>
+    <div class="dock-actions" role="group" aria-labelledby="lbl-dock">${tiles.join("")}</div>`;
 }

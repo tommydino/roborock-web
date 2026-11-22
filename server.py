@@ -26,6 +26,8 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from roborock.exceptions import RoborockException
 
+from ai import register_ai_routes
+
 ROOT = Path(__file__).parent
 STATIC = ROOT / "static"
 BUNDLE = STATIC / "dist" / "main.js"  # built from web/*.ts by `npm run build`
@@ -156,6 +158,8 @@ def create_app(demo: bool, data_dir: Path | None = None) -> FastAPI:
         except KeyError:
             raise HTTPException(404, "Robot not found") from None
 
+    register_ai_routes(app, ctrl)
+
     @app.get("/api/auth")
     async def auth():
         # The UI files are always served fresh, but Python changes need a restart
@@ -248,6 +252,14 @@ def create_app(demo: bool, data_dir: Path | None = None) -> FastAPI:
     @app.delete("/api/devices/{duid}/runs/{run_id}", status_code=204)
     async def delete_run(duid: str, run_id: str):
         await (await ctrl(duid)).delete_run(run_id)
+
+    @app.get("/api/devices/{duid}/suspects")
+    async def suspects(duid: str):
+        return await (await ctrl(duid)).suspects()
+
+    @app.post("/api/devices/{duid}/suspects/name")
+    async def name_suspect(duid: str, x: int = Body(...), y: int = Body(...), name: str = Body("")):
+        return await (await ctrl(duid)).name_suspect(x, y, name)
 
     @app.post("/api/devices/{duid}/action")
     async def action(duid: str, body: dict[str, Any] = Body(...)):
