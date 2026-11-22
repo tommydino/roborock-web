@@ -1,0 +1,58 @@
+{
+  "model": "Saros 20 Sonic",
+  "runs": [
+    {
+      "id": "fixture-device-timeline",
+      "begin": 1800000000,
+      "end": 1800000960,
+      "duration": 720,
+      "area": 8,
+      "complete": true,
+      "mode": "vac_mop",
+      "source": "robot",
+      "start_type": "app",
+      "finish_reason": null,
+      "avoid_count": 2,
+      "wash_count": 2,
+      "dust_collected": true,
+      "record_details": { "cleaned_area": 8, "rooms": true, "dirty_replenish": 1.4, "manual_replenish": 0 },
+      "events": [],
+      "route": { "map": "fixture", "path": [[[0, 0], [10, 0], [10, 10]]], "mop_path": [[[10, 0], [10, 10]]] },
+      "map": { "base": "data:image/png;base64,fixture", "width": 10, "height": 10, "charger": { "x": 0, "y": 0 } },
+      "device_timeline": [
+        { "at": 1800000000, "label": "Start selective room cleaning", "detail": "Vac & Mop" },
+        { "at": 1800000060, "label": "Wash Mop", "detail": "Deep | Hot Water" },
+        { "at": 1800000240, "label": "Clean Kitchen", "detail": "Vac & Mop" },
+        { "at": 1800000540, "label": "Auto Emptying", "detail": "Balanced" },
+        { "at": 1800000780, "label": "Automatic Re-Mopping", "detail": "A dirty area was detected" },
+        { "at": 1800000960, "label": "Cleaning Finished" }
+      ]
+    },
+    {
+      "id": "fixture-observed-timeline",
+      "begin": 1800002000,
+      "end": 1800002600,
+      "duration": 480,
+      "area": 6,
+      "complete": true,
+      "mode": "vac_then_mop",
+      "source": "robot",
+      "start_type": "app",
+      "finish_reason": null,
+      "avoid_count": 0,
+      "wash_count": 1,
+      "dust_collected": false,
+      "record_details": { "cleaned_area": 6, "rooms": true, "dirty_replenish": 0, "manual_replenish": 0 },
+      "events": [
+        { "at": 1800002010, "label": "Vacuum pass in selected rooms" },
+        { "at": 1800002020, "label": "Cleaning Bathroom", "detail": "Vacuum · Vac followed by Mop" },
+        { "at": 1800002300, "label": "Washing mop", "detail": "Deep · Hot Water" },
+        { "at": 1800002400, "label": "Resuming cleaning" },
+        { "at": 1800002450, "label": "Cleaning Bathroom", "detail": "Mop · Vac followed by Mop" }
+      ],
+      "route": null,
+      "map": null,
+      "device_timeline": null
+    }
+  ]
+}

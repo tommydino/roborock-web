@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import {
   advanceReplay,
   deleteHistoryRun,
@@ -79,4 +80,19 @@ test("timeline uses detailed robot events and suppresses duplicate pass rows", (
 test("timeline trusts the device timeline when Roborock provides it", () => {
   const deviceTimeline = [{ at: 100, label: "Start selective room cleaning" }, { at: 200, label: "Cleaning Finished" }];
   assert.equal(runTimeline(detail({ device_timeline: deviceTimeline }), "Completed"), deviceTimeline);
+});
+
+test("anonymized Saros fixtures keep detailed and observed timelines stable", async () => {
+  const fixture = JSON.parse(await readFile(new URL("./fixtures/saros-history.json", import.meta.url), "utf8"));
+  assert.equal(fixture.model, "Saros 20 Sonic");
+  const detailed = runTimeline(fixture.runs[0], "Completed");
+  assert.deepEqual(detailed.map(step => step.label), [
+    "Start selective room cleaning", "Wash Mop", "Clean Kitchen",
+    "Auto Emptying", "Automatic Re-Mopping", "Cleaning Finished",
+  ]);
+  const observed = runTimeline(fixture.runs[1], "Completed");
+  assert.deepEqual(observed.map(step => step.label), [
+    "Start selective room cleaning", "Clean Bathroom", "Wash Mop",
+    "Resume", "Clean Bathroom", "Cleaning Finished",
+  ]);
 });
