@@ -69,6 +69,9 @@ export function renderThings(): void {
   // A hairline at half strength: dense criss-cross runs build up softly instead of
   // turning into a white blanket. Mopped stretches get a faint blue tint on top.
   for (const line of m.path ?? []) svg += `<polyline class="path" points="${points(line)}"/>`;
+  // The newest stretch, drawn brighter on top, so you can see where it's heading.
+  const newest = m.path?.[m.path.length - 1];
+  if (newest && newest.length > 1) svg += `<polyline class="path path-head" points="${points(newest.slice(-40))}"/>`;
   for (const line of m.mop_path ?? []) svg += `<polyline class="mop-path" points="${points(line)}"/>`;
   for (const area of m.no_carpet ?? []) svg += `<polygon class="no-carpet" points="${points(area)}"/>`;
   for (const [x0, y0, x1, y1] of m.zones ?? []) {

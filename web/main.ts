@@ -9,6 +9,8 @@ import {
 } from "./map/editor";
 import { centerOnRobot, resetView } from "./map/panzoom";
 import { get3D, setViewMode, show3D, syncViewChrome } from "./map/views";
+import { renderFreshPanel } from "./freshness";
+import { resetSuspects } from "./suspects";
 import { setNotify } from "./notify";
 import { doAction, renderActions, renderSkeletons, renderStatus, setHomePasses, setModeValue } from "./panels";
 import { logout, reconnect, refreshAuth, startLoops } from "./session";
@@ -16,6 +18,9 @@ import { loadSettings, setChoice } from "./settings";
 import { S, type EditTool, type ViewMode } from "./state";
 import { deletePreset, presets, restoreZone, savePlan, saveZone } from "./presets";
 import "./theme";
+import { initAssist } from "./assist";
+
+initAssist();
 
 // Bring the robot into view, wherever it is: switch to Home, then center on it.
 function showRobot(): void {
@@ -32,7 +37,10 @@ document.addEventListener("click", async (e) => {
 
   if (ds.tab) {
     S.tab = ds.tab === "settings" ? "settings" : "home";
-    $$(".tabs button").forEach((b) => b.classList.toggle("active", b === t));
+    $$(".tabs button").forEach((b) => {
+      b.classList.toggle("active", b === t);
+      b.setAttribute("aria-current", b === t ? "page" : "false");
+    });
     $("#tab-home").hidden = S.tab !== "home";
     $("#tab-settings").hidden = S.tab !== "settings";
     if (S.tab === "settings") void loadSettings();
@@ -161,15 +169,28 @@ document.addEventListener("click", async (e) => {
     case "room-reset-name":
       return renameRoom("", t);
     case "clear-sel":
-      S.selected = [];
-      S.zone = null;
-      S.pin = null;
-      return refreshMapOverlays();
+      return clearPicks();
     default:
       if (act === "stop" && S.status?.job && !confirm("Stop the current cleaning job?")) return;
       doAction(act, {}, { button: t }).catch(() => {});
   }
 });
+
+// Escape lets go of the rooms, zone or spot picked on the map (the editor has its own keys).
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "Escape" || S.edit || S.tab !== "home" || closest(e.target, "input, select, textarea")) return;
+  if (!S.selected.length && !S.zone && !S.pin) return;
+  clearPicks();
+});
+
+function clearPicks(): void {
+  S.selected = [];
+  S.zone = null;
+  S.pin = null;
+  S.drag = null; // a zone still being dragged out
+  refreshMapOverlays();
+  renderFreshPanel(); // its room rows show what's picked too
+}
 
 $<HTMLSelectElement>("#device-select").addEventListener("change", (e) => {
   S.duid = (e.target as HTMLSelectElement).value;
@@ -185,6 +206,9 @@ $<HTMLSelectElement>("#device-select").addEventListener("change", (e) => {
   S.settings = null;
   S.fresh = null;
   S.freshAge = null;
+  S.sus = null;
+  S.susHeat = null;
+  resetSuspects();
   resetView(false);
   S.selected = [];
   S.zone = null;

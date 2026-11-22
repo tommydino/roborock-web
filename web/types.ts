@@ -277,6 +277,51 @@ export interface Freshness {
   intervals?: number[];
 }
 
+/** Something that comes and goes on the floor: a spot the robot reaches on most runs but not all. */
+export interface Suspect {
+  n: number; // the number on its evidence tag
+  anchor: [number, number]; // a block it covers, in robot block coordinates; its name is pinned there
+  room: number;
+  cx: number; // centre, in mask pixels (5 cm blocks)
+  cy: number;
+  w: number; // size in cm
+  h: number;
+  area: number; // m²
+  blocked: number; // finished runs it was in the way on
+  of: number; // finished runs of its room since it was first in the way
+  first: number; // unix time of the first and the last run it was in the way on
+  last: number;
+  there: boolean; // in the way on the latest finished run of its room
+  status: "there" | "gone" | "unchecked"; // unchecked: no run has been over the spot since
+  clear: number; // finished runs since it was last in the way that went over the spot
+  clear_since: number | null; // when the first of those ended
+  solid: boolean; // it left the same hole every time; false: a person of interest, maybe just the route
+  name: string | null;
+  closed: boolean; // named, and clear long enough to close the case
+  box: [number, number, number, number]; // its extent in robot blocks (x0, y0, x1, y1)
+}
+
+export interface TapeRun {
+  id: string;
+  at: number; // unix time it started
+  suspects: number[]; // who was in the way
+  clear?: number[]; // whose spot it went over and found clear; it didn't check the others
+}
+
+export interface Suspects {
+  available: boolean;
+  map?: string; // image version of the map it was worked out for (the layout, not the robot's position)
+  counted?: number; // finished runs with a map it went by
+  skipped?: number; // runs left out: unfinished, no map, or a map cut short
+  heat?: string; // PNG on the mask grid: R = how often missed (0-254, 255 never reached), G = suspect number, B = 1 where it can tell
+  closed_after?: number; // clear runs before a named suspect's case is closed
+  suspects?: Suspect[];
+  residents?: { room: number; cx: number; cy: number; area: number; runs: number }[];
+  rooms?: { id: number; runs: number; judged: number; status?: "ok" | "too_few_runs"; note?: string }[];
+  min_runs?: number; // finished runs a room needs before it can have suspects
+  tape?: TapeRun[]; // the finished runs, oldest first
+}
+
 /** How the app reaches the robot right now. */
 export interface Links {
   local: boolean; // directly, on the home network

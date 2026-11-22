@@ -3,25 +3,29 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#f3f6fb" media="(prefers-color-scheme: light)">
-  <meta name="theme-color" content="#0b0f17" media="(prefers-color-scheme: dark)">
+  <meta name="theme-color" id="theme-color" content="#f4f6f9">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <title>Roborock</title>
   <script>
     // Apply the saved theme before anything paints (web/theme.ts keeps it up to date).
+    // Light unless you picked Dark, or Auto and the Mac is dark.
     (function () {
       var p = null;
       try { p = localStorage.getItem("theme"); } catch (e) {}
-      var dark = p === "dark" || (p !== "light" && matchMedia("(prefers-color-scheme: dark)").matches);
+      var dark = p === "dark" || (p === "auto" && matchMedia("(prefers-color-scheme: dark)").matches);
       document.documentElement.dataset.theme = dark ? "dark" : "light";
+      var m = document.getElementById("theme-color");
+      if (m) m.setAttribute("content", dark ? "#09090b" : "#f4f6f9");
     })();
   </script>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ccircle cx='12' cy='12' r='10' fill='%234c7df0'/%3E%3Ccircle cx='12' cy='9.5' r='2.4' fill='white'/%3E%3C/svg%3E">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <!-- Loads without holding up the first paint; the system font shows until it arrives. -->
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" media="print" onload="this.media='all'">
+  <!-- Loads without holding up the first paint; the system font shows until it arrives.
+       Plus Jakarta Sans for the interface, Manrope for the text on the map (as before). -->
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" media="print" onload="this.media='all'">
   <link rel="stylesheet" href="/static/styles.css">
+  <link rel="stylesheet" href="/static/assist.css">
 </head>
 <body>
   <!-- Sign in -->
@@ -56,59 +60,62 @@
 
   <!-- App -->
   <div id="app-view" class="shell" hidden>
-    <header class="topbar">
-      <div class="brand">
-        <div class="brand-mark" data-icon="robot"></div>
-        <div class="brand-text">
-          <h1 id="robot-name">Robot</h1>
-          <select id="device-select" hidden></select>
-          <div class="conn" id="conn"><span class="dot"></span><span id="conn-text">Connecting…</span></div>
+    <aside class="rail" aria-label="Robot">
+      <header class="topbar rail-head">
+        <div class="brand">
+          <div class="brand-mark" data-icon="robot"></div>
+          <div class="brand-text">
+            <h1 id="robot-name">Robot</h1>
+            <select id="device-select" aria-label="Robot" hidden></select>
+            <div class="conn" id="conn"><span class="dot"></span><span id="conn-text">Connecting…</span></div>
+          </div>
         </div>
+        <div class="top-right">
+          <button class="theme-btn" id="theme-btn" aria-label="Theme"></button>
+          <nav class="tabs" aria-label="Sections">
+            <button data-tab="home" class="active" aria-label="Home" title="Home" aria-current="page"><svg class="i"><use href="#i-map"/></svg><span>Home</span></button>
+            <button data-tab="settings" aria-label="Settings" title="Settings" aria-current="false"><svg class="i"><use href="#i-sliders"/></svg><span>Settings</span></button>
+          </nav>
+        </div>
+      </header>
+      <div class="rail-body">
+        <section class="rail-sec" id="status-card" aria-label="Status"></section>
+        <section class="rail-sec" id="mode-card" aria-label="Cleaning mode"></section>
+        <section class="rail-sec" id="dock-card" aria-label="Dock" hidden></section>
       </div>
-      <div class="top-right">
-      <button class="theme-btn" id="theme-btn" aria-label="Theme"></button>
-      <nav class="tabs">
-        <button data-tab="home" class="active"><svg class="i"><use href="#i-map"/></svg><span>Home</span></button>
-        <button data-tab="settings"><svg class="i"><use href="#i-sliders"/></svg><span>Settings</span></button>
-      </nav>
-      </div>
-    </header>
+      <div class="rail-go" id="action-card"></div>
+    </aside>
 
-    <div id="center-msg" class="center-msg" hidden></div>
+    <main class="pane">
+      <div id="center-msg" class="center-msg" hidden></div>
 
-    <section id="tab-home" hidden>
-      <div class="layout">
-        <aside class="side">
-          <div class="card" id="status-card"></div>
-          <div class="card action-card" id="action-card"></div>
-          <div class="card" id="mode-card"></div>
-          <div class="card" id="dock-card" hidden></div>
-        </aside>
-        <div class="main">
+      <section id="tab-home" hidden>
           <div class="card" id="map-card">
             <div class="card-head">
               <div class="head-left">
-                <h3 class="card-title"><svg class="i"><use href="#i-map"/></svg><span id="map-title">Map</span></h3>
-                <div class="seg small view-modes" id="view-modes" aria-label="Map view">
-                  <button data-view="2d" class="active" title="Colour map">2D</button>
-                  <button data-view="3d" title="Rotate around your home in 3D">3D</button>
-                  <button data-view="plan" title="Floor plan with room sizes">Plan</button>
-                  <button data-view="fresh" title="When each room and spot was last cleaned">Freshness</button>
+                <h3 class="card-title"><svg class="i"><use href="#i-pencil"/></svg><span id="map-title">Map</span></h3>
+                <div class="seg small view-modes" id="view-modes" role="group" aria-label="Map view">
+                  <button data-view="2d" class="active" aria-pressed="true" title="Colour map">2D</button>
+                  <button data-view="3d" aria-pressed="false" title="Rotate around your home in 3D">3D</button>
+                  <button data-view="plan" aria-pressed="false" title="Floor plan with room sizes">Plan</button>
+                  <button data-view="fresh" aria-pressed="false" title="When each room and spot was last cleaned">Freshness</button>
+                  <button data-view="suspects" aria-pressed="false" title="Things that come and go on your floor, found from spots the robot sometimes can't reach">Suspects</button>
                 </div>
+                <button class="btn-soft assist-open" data-ai="open" title="Ask in your own words (⌘K)"><svg class="i"><use href="#i-spark"/></svg>Ask</button>
               </div>
               <div class="head-tools" id="head-normal">
-                <select class="map-select" id="map-select" hidden></select>
-                <div class="map-tools" id="map-tools">
-                  <button data-tool="rooms" class="active" title="Pick rooms"><svg class="i"><use href="#i-rooms"/></svg><span>Rooms</span></button>
-                  <button data-tool="zone" title="Draw a zone"><svg class="i"><use href="#i-zone"/></svg><span>Zone</span></button>
-                  <button data-tool="goto" title="Send robot to a spot"><svg class="i"><use href="#i-target"/></svg><span>Go to</span></button>
+                <select class="map-select" id="map-select" aria-label="Floor" hidden></select>
+                <div class="map-tools" id="map-tools" role="group" aria-label="Map tool">
+                  <button data-tool="rooms" class="active" aria-pressed="true" aria-label="Rooms" title="Pick rooms"><svg class="i"><use href="#i-rooms"/></svg><span>Rooms</span></button>
+                  <button data-tool="zone" aria-pressed="false" aria-label="Zone" title="Draw a zone"><svg class="i"><use href="#i-zone"/></svg><span>Zone</span></button>
+                  <button data-tool="goto" aria-pressed="false" aria-label="Go to" title="Send robot to a spot"><svg class="i"><use href="#i-target"/></svg><span>Go to</span></button>
                 </div>
-                <button class="btn-soft" data-act="edit-start" title="Invisible walls, no-go zones and rooms"><svg class="i"><use href="#i-pencil"/></svg><span>Edit map</span></button>
+                <button class="btn-soft" data-act="edit-start" aria-label="Edit map" title="Invisible walls, no-go zones and rooms"><svg class="i"><use href="#i-pencil"/></svg><span>Edit map</span></button>
               </div>
               <div class="head-tools" id="head-edit" hidden>
-                <div class="seg small" id="edit-modes">
-                  <button data-emode="walls" class="active">Walls &amp; zones</button>
-                  <button data-emode="rooms">Rooms</button>
+                <div class="seg small" id="edit-modes" role="group" aria-label="What to edit">
+                  <button data-emode="walls" class="active" aria-pressed="true">Walls &amp; zones</button>
+                  <button data-emode="rooms" aria-pressed="false">Rooms</button>
                 </div>
                 <button class="btn-soft" data-act="edit-done">Done</button>
               </div>
@@ -145,6 +152,7 @@
                 <svg class="map-draw" id="map-draw"></svg>
                 <div id="map-things" class="map-things"></div>
                 <div id="map-labels"></div>
+                <div id="sus-tags" class="sus-tags"></div>
                 <button class="marker shape-delete" id="shape-delete" data-act="edit-delete" title="Delete (⌫)" aria-label="Delete" hidden><svg class="i"><use href="#i-trash"/></svg></button>
                 <div class="marker dock-marker" id="dock-marker" hidden><svg class="i"><use href="#i-bolt"/></svg></div>
                 <div class="marker" id="robot-marker" hidden><div class="robot"><span class="nose"></span></div></div>
@@ -152,16 +160,17 @@
               <div class="fresh-tip" id="fresh-tip" hidden></div>
             </div>
             <aside class="fresh-panel" id="fresh-panel" hidden></aside>
+            <aside class="fresh-panel sus-panel" id="sus-panel" hidden></aside>
             </div>
             <div class="map-foot" id="map-foot"></div>
           </div>
-        </div>
-      </div>
-    </section>
+      </section>
 
-    <section id="tab-settings" hidden>
-      <div class="settings-grid" id="settings"></div>
-    </section>
+      <section id="tab-settings" hidden>
+        <h2 class="pane-title">Settings</h2>
+        <div class="settings-grid" id="settings"></div>
+      </section>
+    </main>
   </div>
 
   <div id="update-banner" class="update-banner" role="status" hidden>
@@ -199,6 +208,7 @@
       <symbol id="i-lock" viewBox="0 0 24 24"><rect x="4" y="11" width="16" height="10" rx="2.5"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></symbol>
       <symbol id="i-light" viewBox="0 0 24 24"><path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2z"/></symbol>
       <symbol id="i-layers" viewBox="0 0 24 24"><path d="m12 2.5 9.5 5-9.5 5-9.5-5z"/><path d="m2.5 12 9.5 5 9.5-5M2.5 16.5l9.5 5 9.5-5"/></symbol>
+      <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></symbol>
       <symbol id="i-spark" viewBox="0 0 24 24"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9zM19 16l.8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8z"/></symbol>
       <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
       <symbol id="i-wrench" viewBox="0 0 24 24"><path d="M14.7 6.3a4 4 0 0 0 5.4 5.1l-8.6 8.6a2.1 2.1 0 0 1-3-3l8.6-8.6a4 4 0 0 0-2.4-2.1z"/></symbol>

@@ -2,11 +2,13 @@
 // server keeps of every run. This map view colours the floor by how long ago it was cleaned.
 
 import { api, devicePath } from "./api";
-import { $, closest, cssVar, esc, hexRgb, icon, toast } from "./dom";
+import { $, closest, cssVar, esc, fmtArea, fmtDuration, fmtWhen, hexRgb, icon, toast } from "./dom";
 import { decodeMask, refreshMapOverlays, toBase, toggleRoom } from "./map/core";
 import { mapImg, stage } from "./map/elements";
 import { estimateText, roomsArea } from "./estimate";
+import { loadSuspects, suspectTip } from "./suspects";
 import { doAction, passes } from "./panels";
+import { explainHtml } from "./assist";
 import { S } from "./state";
 import type { Freshness, RoomFreshness } from "./types";
 
@@ -84,12 +86,13 @@ setInterval(() => {
 export function freshJobChanged(running: boolean): void {
   renderFreshPanel();
   if (running) return;
-  const refreshHistory = () => {
-    void loadFreshness();
+  const reload = () => {
+    if (S.viewMode === "fresh") void loadFreshness();
+    else if (S.viewMode === "suspects") void loadSuspects();
     document.dispatchEvent(new Event("run-history-refresh"));
   };
-  setTimeout(refreshHistory, 3_000);
-  setTimeout(refreshHistory, 45_000); // the robot can take a moment to file the run
+  setTimeout(reload, 3_000);
+  setTimeout(reload, 45_000); // the robot can take a moment to file the run
 }
 
 /* ---- the map image ---- */
@@ -179,9 +182,9 @@ function canvas(w: number, h: number): HTMLCanvasElement {
 
 /* ---- hover ---- */
 
-/** What the Freshness view says about the spot under the pointer (null hides the tip). */
+/** What the Freshness or Suspects view says about the spot under the pointer (null hides the tip). */
 export function freshHover(e: PointerEvent | null): void {
-  const text = e && S.viewMode === "fresh" ? describe(e) : null;
+  const text = !e ? null : S.viewMode === "fresh" ? describe(e) : S.viewMode === "suspects" ? suspectTip(e) : null;
   tip.hidden = !text;
   if (!e || !text) return;
   tip.innerHTML = text;
@@ -284,6 +287,19 @@ export function renderFreshPanel(): void {
        ${est && !busy ? `<div class="estimate">${icon("clock", "i tiny")}${est}</div>` : ""}`
     : `<div class="fresh-ok">${icon("check")}Every room is within its interval</div>`;
 
+  const runs = (f.runs ?? [])
+    .map((run) => {
+      const where = run.rooms.length ? run.rooms.map((id) => esc(names.get(id) ?? `Room ${id}`)).join(", ") : run.mapped ? "Part of a room" : "No map for this run";
+      return `<li><div class="run-when">${esc(fmtWhen(run.begin))}</div><div class="run-what">${where}</div>
+        <div class="run-meta">${fmtDuration(run.duration)} · ${fmtArea(run.area)}${run.mopped ? ` · ${icon("drop", "i tiny")}mopped` : ""}</div>
+        ${explainHtml(run.begin)}</li>`;
+    })
+    .join("");
+
+  const empty = !f.tracked
+    ? `<div class="fresh-empty">${icon("history")}<div>Nothing recorded yet. Every run the robot finishes while this app is running is added here, so this fills in as it cleans.</div></div>`
+    : "";
+
   freshPanel.innerHTML = `
     <div class="fresh-head"><h4>Freshness</h4>${due.length ? `<span class="due-badge">${icon("clock")}${due.length} due</span>` : ""}</div>
     <div class="fresh-rooms">${rooms.map(row).join("")}</div>
@@ -293,6 +309,8 @@ export function renderFreshPanel(): void {
       <span><i style="background:var(--fresh-${MISSED})"></i>Never reached</span>
       <span><i class="none"></i>No data yet</span>
     </div>
+    ${empty}
+    ${runs ? `<details class="fresh-runs"><summary>Recent runs</summary><ul>${runs}</ul></details>` : ""}
     <p class="fresh-note">${S.auth?.demo ? "Made-up room freshness for the demo." : `Room coverage history since ${since()} · ${f.tracked ?? 0} runs with a map`}</p>`;
 }
 

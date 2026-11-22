@@ -66,6 +66,7 @@ from history import (
 )
 from history_rpc import map_diagnostics, probe_history_map, send_history_command
 from maprender import MapRenderer, RenderedMap
+from suspects import pin_name, suspects
 from timeline import read_timeline
 
 _LOGGER = logging.getLogger(__name__)
@@ -241,6 +242,7 @@ class DeviceController:
         self._fresh: tuple[tuple, dict[str, Any]] | None = None
         self._state_updates: deque[tuple[int, Any]] = deque(maxlen=512)
         self._state_changed = asyncio.Event()
+        self._sus: tuple[tuple, dict[str, Any]] | None = None
         self._run_seen = False  # a run was going on at the last history check
         self._dock_event: tuple[int, str] | None = None
         self._mount_sample: tuple[int, int] | None = None
@@ -866,17 +868,22 @@ class DeviceController:
     async def estimates(self) -> dict[str, Any]:
         return estimate_model(self.history)
 
-    async def freshness(self) -> dict[str, Any]:
+    async def _history_map(self) -> RenderedMap | None:
+        """The map that history views are worked out on (fetched if the app has none yet)."""
         if self._map is None:
             async with self._map_lock:
                 if self._map is None:
                     await self._refresh_map()
-        if self._map is None:
+        return self._map
+
+    async def freshness(self) -> dict[str, Any]:
+        m = await self._history_map()
+        if m is None:
             return {"available": False}
         flag = self._p.status.current_map
-        key = (self.history.rev, self._map.version, flag, int(time.time() // 60))
+        key = (self.history.rev, m.version, flag, int(time.time() // 60))
         if self._fresh is None or self._fresh[0] != key:
-            self._fresh = (key, await asyncio.to_thread(freshness, self.history, self._map, flag))
+            self._fresh = (key, await asyncio.to_thread(freshness, self.history, m, flag))
         return self._fresh[1]
 
     def _supports_timeline(self) -> bool:
@@ -1080,6 +1087,21 @@ class DeviceController:
         if run_id in remaining:
             raise RoborockException("The robot did not confirm that this cleaning run was deleted")
         self.history.remove(run_id)
+
+    async def suspects(self) -> dict[str, Any]:
+        m = await self._history_map()
+        if m is None:
+            return {"available": False}
+        flag = self._p.status.current_map
+        # Runs only change it when one finishes; the map's image version covers a new layout.
+        key = (self.history.rev, m.image_version, flag)
+        if self._sus is None or self._sus[0] != key:
+            self._sus = (key, await asyncio.to_thread(suspects, self.history, m, flag))
+        return self._sus[1]
+
+    async def name_suspect(self, x: int, y: int, name: str) -> dict[str, Any]:
+        pin_name(self.history, await self.suspects(), self._p.status.current_map, x, y, name)
+        return await self.suspects()
 
     async def _refresh_map(self) -> None:
         p = self._p
