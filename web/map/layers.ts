@@ -2,6 +2,7 @@
 // where it mopped), carpets, obstacles the robot spotted, no-carpet zones, the
 // zone being cleaned and the go-to target. The Layers menu switches them on and off.
 
+import { devicePath } from "../api";
 import { $, $$, closest, cssVar, esc, icon, pct } from "../dom";
 import { S, type Layers } from "../state";
 import type { Obstacle, ObstacleKind, Polyline } from "../types";
@@ -28,6 +29,7 @@ export interface ObstacleGroup {
   kind: ObstacleKind;
   count: number;
   title: string;
+  photoId?: string;
 }
 
 /** Merge obstacles within half a metre into one marker, so a wall of bumps doesn't pile up. */
@@ -51,8 +53,9 @@ export function groupObstacles(obstacles: Obstacle[], scale: number): ObstacleGr
     title += kind === "obstacle"
       ? " – Roborock detected something here and steered around it, but did not provide a name"
       : " – detected and avoided by the robot";
-    if (items.some((i) => i.photo)) title += ". Photo available in the Roborock app";
-    return { x: xs / items.length, y: ys / items.length, kind, count: items.length, title };
+    const photoId = items.find((i) => i.photo_id)?.photo_id ?? undefined;
+    if (photoId) title += ". Tap to view the photo";
+    return { x: xs / items.length, y: ys / items.length, kind, count: items.length, title, photoId };
   });
 }
 
@@ -80,10 +83,10 @@ export function renderThings(): void {
   for (const line of m.goto_path ?? []) svg += `<polyline class="goto-route" points="${points(line)}"/>`;
   infoSvg.innerHTML = svg;
 
-  const marker = (cls: string, x: number, y: number, title: string, ic: string, count = 1) =>
-    `<span class="thing ${cls}" role="button" tabindex="0" data-map-info="${esc(title)}" aria-label="${esc(title)}" style="left:${pct(x, m.width)};top:${pct(y, m.height)}" title="${esc(title)}">${icon(ic)}${count > 1 ? `<b class="count">${count}</b>` : ""}</span>`;
+  const marker = (cls: string, x: number, y: number, title: string, ic: string, count = 1, photoId?: string) =>
+    `<span class="thing ${cls}" role="button" tabindex="0" data-map-info="${esc(title)}" ${photoId ? `data-photo-id="${esc(photoId)}"` : ""} aria-label="${esc(title)}" style="left:${pct(x, m.width)};top:${pct(y, m.height)}" title="${esc(title)}">${icon(ic)}${count > 1 ? `<b class="count">${count}</b>` : ""}</span>`;
   thingsEl.innerHTML =
-    groupObstacles(m.obstacles ?? [], m.scale).map((g) => marker(g.kind, g.x, g.y, g.title, OBSTACLE_ICON[g.kind], g.count)).join("") +
+    groupObstacles(m.obstacles ?? [], m.scale).map((g) => marker(g.kind, g.x, g.y, g.title, OBSTACLE_ICON[g.kind], g.count, g.photoId)).join("") +
     (m.goto ? marker("goto", m.goto[0], m.goto[1], "Where the robot is heading", "target") : "");
 
   carpetsImg.src = carpetImage() || "data:,";
@@ -183,7 +186,14 @@ function showObjectInfo(marker: HTMLElement): void {
     activeMarker = null;
     return;
   }
-  objectInfo.textContent = text;
+  const photoId = marker.dataset.photoId;
+  objectInfo.innerHTML = `<div>${esc(text)}</div>${photoId ? `<img class="obstacle-photo" src="${devicePath("obstacle-photo")}?photo_id=${encodeURIComponent(photoId)}" alt="Photo of detected obstacle"><div class="obstacle-photo-error" hidden>Photo unavailable</div>` : ""}`;
+  const image = objectInfo.querySelector<HTMLImageElement>(".obstacle-photo");
+  image?.addEventListener("error", () => {
+    image.hidden = true;
+    const error = objectInfo.querySelector<HTMLElement>(".obstacle-photo-error");
+    if (error) error.hidden = false;
+  }, { once: true });
   activeMarker = marker;
   objectInfo.hidden = false;
   const target = marker.getBoundingClientRect();

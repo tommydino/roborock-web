@@ -435,6 +435,24 @@ class DeviceController:
         payload["stale"] = self._map_from_disk  # the browser asks again soon for the fresh one
         return payload
 
+    async def obstacle_photo(self, photo_id: str) -> tuple[bytes, str]:
+        """Fetch a photo that is explicitly referenced by the current map."""
+        m = await self._history_map()
+        valid_ids = {
+            item.get("photo_id")
+            for item in ((m.things.get("obstacles") if m else None) or [])
+            if item.get("photo_id")
+        }
+        if not photo_id or photo_id not in valid_ids:
+            raise ValueError("Obstacle photo not found on the current map")
+        photos = self._p.obstacle_photos
+        if photos is None:
+            raise RoborockException("Obstacle photos are not supported by this robot")
+        photo = await photos.get_photo(photo_id)
+        content = photo.image_content
+        media_type = "image/png" if content.startswith(b"\x89PNG\r\n\x1a\n") else "image/jpeg"
+        return content, media_type
+
     def _refresh_soon(self) -> None:
         """Fetch a fresh map in the background; the caller serves the one it has."""
         if self._map_task is None or self._map_task.done():

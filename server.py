@@ -22,7 +22,7 @@ from typing import Any
 import uvicorn
 from fastapi import Body, FastAPI, HTTPException, Request
 from fastapi.middleware.gzip import GZipMiddleware
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from roborock.exceptions import RoborockException
 
@@ -198,6 +198,14 @@ def create_app(demo: bool, data_dir: Path | None = None) -> FastAPI:
     @app.get("/api/devices/{duid}/map")
     async def map_(duid: str, since: str | None = None, img: str | None = None):
         return await (await ctrl(duid)).map(since, img)
+
+    @app.get("/api/devices/{duid}/obstacle-photo")
+    async def obstacle_photo(duid: str, photo_id: str):
+        try:
+            content, media_type = await (await ctrl(duid)).obstacle_photo(photo_id)
+        except ValueError as err:
+            raise HTTPException(404, str(err)) from err
+        return Response(content, media_type=media_type, headers={"Cache-Control": "private, max-age=300"})
 
     @app.get("/api/devices/{duid}/settings")
     async def settings(duid: str):
