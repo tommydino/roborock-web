@@ -53,7 +53,7 @@ from roborock.roborock_typing import RoborockCommand
 from roborock.web_api import RoborockApiClient
 
 from history import (
-    KEEP_DAYS,
+    history_cutoff,
     RECENT_RUNS,
     Grid,
     History,
@@ -669,7 +669,7 @@ class DeviceController:
                 self.history.add(run, map_asset(run_map, self._room_names) if run_map and run.route else None)
                 self._schedule_timeline(run.id)
             self._import_queue = [rid for rid in ids[1:RECENT_RUNS] if not self.history.has(str(rid))
-                                  and rid >= time.time() - KEEP_DAYS * 86400]
+                                  and rid >= history_cutoff()]
         if self._import_queue:
             rid = self._import_queue.pop(0)
             if not self.history.has(str(rid)):
@@ -1047,7 +1047,7 @@ class DeviceController:
                     _LOGGER.info("Could not refresh robot history: %s", err)
                     if not self.history.runs and not summary.records:
                         raise
-            cutoff = time.time() - KEEP_DAYS * 86400
+            cutoff = history_cutoff()
             ids = sorted({int(rid) for rid in summary.records or [] if int(rid) >= cutoff}, reverse=True)
             missing = [rid for rid in ids[:RECENT_RUNS] if not self.history.has(str(rid))]
             # Fetch lightweight records only. Route maps are loaded when opened.

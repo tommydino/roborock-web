@@ -5,6 +5,7 @@ import {
   advanceReplay,
   deleteHistoryRun,
   loadHistoryRun,
+  runDetailHtml,
   runTimeline,
   selectRuns,
 } from "/tmp/roborock-web-history-tests.mjs";
@@ -95,4 +96,39 @@ test("anonymized Saros fixtures keep detailed and observed timelines stable", as
     "Start selective room cleaning", "Clean Bathroom", "Wash Mop",
     "Resume", "Clean Bathroom", "Cleaning Finished",
   ]);
+});
+
+test("history detail keeps its visual component contract", async () => {
+  const fixture = JSON.parse(await readFile(new URL("./fixtures/saros-history.json", import.meta.url), "utf8"));
+  const run = { ...fixture.runs[0], source: "demo" };
+  const html = runDetailHtml({
+    selectedRunId: run.id,
+    selectedRun: run,
+    fetchingHistoryMap: false,
+    loadError: null,
+    routeSpeed: 3,
+    routeProgress: 250,
+    appTimeline: "",
+  });
+  const contract = {
+    accessibleRegion: html.includes('role="region" aria-label="Cleaning run details"'),
+    mapBeforeTimeline: html.indexOf('class="run-map"') < html.indexOf('class="rr-timeline"'),
+    replaySpeeds: [...html.matchAll(/data-run-speed="(\d)"/g)].map(match => match[1]),
+    activeSpeed: html.includes('replay-speed is-active" data-run-speed="3"'),
+    routeLayers: [...html.matchAll(/data-route-group="(clean|mop)"/g)].map(match => match[1]),
+    aiBadgeSingleLineMarkup: html.includes('<div class="rr-detail rr-ai"><b>AI</b><div>'),
+    timelineOrder: ["Start selective room cleaning", "Wash Mop", "Clean Kitchen", "Auto Emptying", "Automatic Re-Mopping", "Cleaning Finished"]
+      .map(label => html.indexOf(label)),
+    summaryFooter: html.includes("Cleaning Time</small>") && html.includes("Cleaning Area</small>"),
+  };
+  assert.deepEqual(contract, {
+    accessibleRegion: true,
+    mapBeforeTimeline: true,
+    replaySpeeds: ["1", "3", "5"],
+    activeSpeed: true,
+    routeLayers: ["clean", "mop"],
+    aiBadgeSingleLineMarkup: true,
+    timelineOrder: [...contract.timelineOrder].sort((a, b) => a - b),
+    summaryFooter: true,
+  });
 });

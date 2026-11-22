@@ -29,14 +29,20 @@ _LOGGER = logging.getLogger(__name__)
 
 SWATH = 6  # blocks (30 cm): what one pass of the robot covers
 ROOM_DONE = 0.5  # a run that covered half a room's floor counts as cleaning the room
-KEEP_DAYS = 120
+# None keeps every locally recorded run. Users can still delete individual runs
+# or restore a smaller backup when they want to reclaim storage.
+KEEP_DAYS: int | None = None
 DEFAULT_INTERVAL = 7  # days a room can go before it's due
 INTERVALS = [1, 2, 3, 7, 14]  # what the app offers
-RECENT_RUNS = 30  # how many runs the app lists
+RECENT_RUNS = 30  # how many cloud records are imported during initial startup work
 HISTORY_VERSION = 1
 BACKUP_FORMAT = "roborock-web-history-v1"
 
 Line = list[tuple[float, float]]
+
+
+def history_cutoff() -> float:
+    return 0 if KEEP_DAYS is None else time.time() - KEEP_DAYS * 86400
 
 
 @dataclass
@@ -237,7 +243,8 @@ class History:
 
     def observe(self, at: int, label: str, detail: str | None = None) -> int:
         with self._observations as db:
-            db.execute("DELETE FROM events WHERE at < ?", (int(time.time()) - KEEP_DAYS * 86400,))
+            if KEEP_DAYS is not None:
+                db.execute("DELETE FROM events WHERE at < ?", (int(history_cutoff()),))
             row = db.execute("INSERT INTO events (at, label, detail) VALUES (?, ?, ?)", (at, label, detail))
         return row.lastrowid
 
@@ -278,7 +285,7 @@ class History:
             run.record_details = previous.record_details
         if previous and run.device_events is None:
             run.device_events = previous.device_events
-        cutoff = time.time() - KEEP_DAYS * 86400
+        cutoff = history_cutoff()
         runs = [r for r in self.runs if r.id != run.id and r.end >= cutoff]
         if run.end >= cutoff:
             runs.append(run)
@@ -315,7 +322,7 @@ class History:
 
     def list(self) -> list[dict[str, Any]]:
         result = []
-        for run in reversed(self.runs[-RECENT_RUNS:]):
+        for run in reversed(self.runs):
             route = run.route
             timeline = timeline_rows(run.device_events, {}) if run.device_events else []
             empty_count = sum(row.get("label") == "Auto Emptying" for row in timeline)

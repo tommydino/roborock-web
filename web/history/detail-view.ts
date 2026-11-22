@@ -36,9 +36,9 @@ function routeSvg(run: RunDetail): string {
       <button type="button" data-route-toggle="mop" aria-pressed="true"><i class="run-route-swatch mop"></i>Mop</button>
     </div>
     <div class="run-map-tools" role="group" aria-label="Map zoom controls">
-      <button class="btn-soft" data-map-zoom-in aria-label="Zoom in" title="Zoom in">+</button>
-      <button class="btn-soft" data-map-zoom-out aria-label="Zoom out" title="Zoom out">−</button>
-      <button class="btn-soft" data-map-zoom-reset title="Reset zoom">Reset</button>
+      <button type="button" class="btn-soft" data-map-zoom-in aria-label="Zoom in" title="Zoom in">+</button>
+      <button type="button" class="btn-soft" data-map-zoom-out aria-label="Zoom out" title="Zoom out">−</button>
+      <button type="button" class="btn-soft" data-map-zoom-reset title="Reset zoom">Reset</button>
       <span data-map-zoom-label>100%</span>
     </div>
   </div>`;
@@ -151,7 +151,7 @@ export interface DetailViewState {
 export function runDetailHtml(state: DetailViewState): string {
   const { selectedRunId, selectedRun, fetchingHistoryMap, loadError, routeSpeed, routeProgress, appTimeline, transcript } = state;
   if (!selectedRunId) return "";
-  if (!selectedRun) return `<section class="run-detail"><div class="history-head"><b>Cleaning run</b><button class="btn-soft" data-run-close>Close</button></div>
+  if (!selectedRun) return `<section class="run-detail" tabindex="-1" role="region" aria-label="Cleaning run details"><div class="history-head"><b>Cleaning run</b><button type="button" class="btn-soft" data-run-close aria-label="Close cleaning run details">Close</button></div>
     ${loadError ? `<div class="run-no-route"><p>${esc(loadError)}</p><button class="btn-soft" data-run-retry="${esc(selectedRunId)}">Try again</button></div>` : `<p class="muted">Loading run details…</p>`}</section>`;
   const run = selectedRun;
   const clock = (ts: number) => new Date(ts * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
@@ -179,8 +179,8 @@ export function runDetailHtml(state: DetailViewState): string {
     run.dust_collected ? "Dust collected" : null,
     run.avoid_count != null ? `${run.avoid_count} avoidance events` : null]
     .filter((x): x is string => !!x).map((x) => `<span>${esc(x)}</span>`).join("");
-  return `<section class="run-detail">
-    <div class="history-head"><b>${esc(fmtWhen(run.begin))}</b><button class="btn-soft" data-run-close>Close</button></div>
+  return `<section class="run-detail" tabindex="-1" role="region" aria-label="Cleaning run details">
+    <div class="history-head"><b>${esc(fmtWhen(run.begin))}</b><button type="button" class="btn-soft" data-run-close aria-label="Close cleaning run details">Close</button></div>
     <div class="run-time-breakdown">
       <span><strong>${esc(fmtDuration(duration))}</strong><small>Cleaning time</small></span>
       <span><strong>${esc(fmtDuration(elapsed))}</strong><small>Total elapsed</small></span>
@@ -196,7 +196,7 @@ export function runDetailHtml(state: DetailViewState): string {
           ${[1, 3, 5].map((speed) => `<button class="btn-soft replay-speed${routeSpeed === speed ? " is-active" : ""}" data-run-speed="${speed}" aria-pressed="${routeSpeed === speed}">${speed}×</button>`).join("")}
         </div>
         <label class="visually-hidden" for="run-progress">Route progress</label>
-        <input id="run-progress" type="range" min="0" max="1000" value="${routeProgress}">
+        <input id="run-progress" type="range" min="0" max="1000" value="${routeProgress}" aria-describedby="run-progress-label run-replay-phase">
         <span id="run-progress-label">${fmtDuration(0)} / ${fmtDuration(duration)}</span>
         <b id="run-replay-phase" class="run-replay-phase">Vacuuming</b>
       </div>

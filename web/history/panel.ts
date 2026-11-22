@@ -158,10 +158,13 @@ export function renderRunHistory(): void {
   const list = $opt<HTMLElement>("#history-runs-list");
   const detail = $opt<HTMLElement>("#history-run-detail");
   if (!list || !detail) return;
+  const keepDetailFocus = detail.contains(document.activeElement);
   const backupLink = $opt<HTMLAnchorElement>("[data-history-export]");
   if (backupLink) backupLink.href = devicePath("history-backup");
   list.hidden = selectedRunId !== null;
   detail.hidden = selectedRunId === null;
+  list.setAttribute("aria-busy", String(runHistoryLoading && selectedRunId === null));
+  detail.setAttribute("aria-busy", String(runHistoryLoading && selectedRunId !== null));
   const filters = { result: historyResultFilter, type: historyTypeFilter, sort: historySort };
   const filteredRuns = selectRuns(runHistory, filters);
   list.innerHTML = selectedRunId ? "" : historyListHtml(runHistory, filteredRuns, runHistoryLoading, filters);
@@ -180,6 +183,7 @@ export function renderRunHistory(): void {
   syncSpeedButtons();
   syncRouteToggles();
   applyMapView();
+  if (keepDetailFocus) detail.querySelector<HTMLElement>(".run-detail")?.focus();
 }
 
 function syncRouteToggles(): void {
@@ -205,6 +209,7 @@ async function openHistoryRun(id: string): Promise<void> {
   mapPanX = 0;
   mapPanY = 0;
   renderRunHistory();
+  requestAnimationFrame(() => settingsRoot.querySelector<HTMLElement>(".run-detail")?.focus());
   const request = ++historyRequest;
   const current = () => request === historyRequest && selectedRunId === id;
   const path = devicePath(`runs/${encodeURIComponent(id)}`);
@@ -238,6 +243,18 @@ async function openHistoryRun(id: string): Promise<void> {
 }
 
 const settingsRoot = $("#settings");
+
+function closeHistoryRun(): void {
+  const id = selectedRunId;
+  if (routeTimer != null) window.clearInterval(routeTimer);
+  routeTimer = null;
+  selectedRunId = null;
+  selectedRun = null;
+  historyLoadError = null;
+  renderRunHistory();
+  if (id) requestAnimationFrame(() => settingsRoot.querySelector<HTMLElement>(`[data-run="${CSS.escape(id)}"]`)?.focus());
+}
+
 settingsRoot.addEventListener("change", async (event) => {
   const input = event.target;
   if (input instanceof HTMLInputElement && input.matches("[data-history-import]")) {
@@ -350,12 +367,7 @@ settingsRoot.addEventListener("click", async (e) => {
   }
   const close = closest(e.target, "[data-run-close]");
   if (close) {
-    if (routeTimer != null) window.clearInterval(routeTimer);
-    routeTimer = null;
-    selectedRunId = null;
-    selectedRun = null;
-    historyLoadError = null;
-    renderRunHistory();
+    closeHistoryRun();
     return;
   }
   const retry = closest<HTMLButtonElement>(e.target, "[data-run-retry]");
@@ -479,5 +491,9 @@ settingsRoot.addEventListener("input", (e) => {
 
 document.addEventListener("run-history-refresh", () => {
   if (S.tab === "settings") void loadRunHistory();
+});
+
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && selectedRunId && S.tab === "settings") closeHistoryRun();
 });
 
