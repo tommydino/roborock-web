@@ -284,10 +284,12 @@ class DeviceController:
         now = time.monotonic()
         # After a failure, answer straight away for a while instead of making every request
         # wait out another timeout (they used to queue up behind each other).
-        due = now - self._status_at > STATUS_TTL and (force or now - self._status_failed_at > STATUS_RETRY)
+        due = force or (
+            now - self._status_at > STATUS_TTL and now - self._status_failed_at > STATUS_RETRY
+        )
         if due:
             async with self._status_lock:
-                if time.monotonic() - self._status_at > STATUS_TTL:
+                if force or time.monotonic() - self._status_at > STATUS_TTL:
                     try:
                         # Use the same status request and library conversion as refresh(),
                         # retaining per-room fields omitted by the typed status model.
