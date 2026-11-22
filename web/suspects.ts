@@ -444,7 +444,7 @@ function lede(f: Suspects, total: number, atLarge: number, poi: number, closed: 
     if (!rooms.length) return `No finished runs with a map yet. Every run the robot finishes while this app is running adds to the case.`;
     const so = rooms
       .sort((a, b) => b.judged - a.judged)
-      .map((r) => `${esc(room(r.id))} ${r.judged}`)
+      .map((r) => `${esc(room(r.id))}: ${r.judged} of ${need} runs`)
       .join(", ");
     return `The case needs ${need} finished runs of a room to tell clutter from the robot's route. So far: ${so}.`;
   }

@@ -37,7 +37,7 @@ from roborock.const import (
     STRAINER_REPLACE_TIME,
 )
 from roborock.data import UserData
-from roborock.data.v1.v1_clean_modes import WashTowelModes
+from roborock.data.v1.v1_clean_modes import CleaningMode, WashTowelModes, get_cleaning_mode_parameters
 from roborock.data.v1.v1_code_mappings import RoborockDockDustCollectionModeCode, RoborockStateCode
 from roborock.data.v1.v1_containers import CleanRecord, DnDTimer, NetworkInfo
 from roborock.device_features import DeviceFeatures
@@ -93,6 +93,8 @@ CODES_THROTTLED = (
 )
 SETTING_TIMEOUT = 8.0
 WHOLE_HOME_PASSES = (1, 2)  # what the robot takes for cleaning everywhere; rooms and zones go up to 3
+CLEAN_THEN_MOP_MODE = "vac_then_mop"
+CLEAN_THEN_MOP_COMMAND = "app_set_clean_sequence_type"
 
 S = RoborockStateCode
 CLEANING_STATES = {
@@ -362,6 +364,13 @@ class DeviceController:
             cleaning_mode = s.current_cleaning_mode_name
         except RoborockException:
             cleaning_options, cleaning_mode = [], None
+        if _flag(features, "is_clean_then_mop_mode_supported"):
+            # python-roborock does not model this fourth mode yet. Roborock reports
+            # it separately as seq_type=1 rather than as a clean motor mode.
+            if CLEAN_THEN_MOP_MODE not in cleaning_options:
+                cleaning_options.append(CLEAN_THEN_MOP_MODE)
+            if self._room_status.get("sequence") == 1:
+                cleaning_mode = CLEAN_THEN_MOP_MODE
 
         return {
             **self._identity(),
@@ -1290,6 +1299,37 @@ class DeviceController:
 
     # ---------- actions ----------
 
+    async def _set_cleaning_mode(self, mode: str) -> None:
+        """Switch the high-level mode, including Roborock's separate clean-then-mop flag."""
+        features = self._p.device_features
+        supported = _flag(features, "is_clean_then_mop_mode_supported")
+        if mode == CLEAN_THEN_MOP_MODE:
+            if not supported:
+                raise ValueError("Vac followed by Mop is not supported by this robot")
+            base_mode = CleaningMode.VAC_AND_MOP
+            # The official app sends the ordinary Vac & Mop motor values along
+            # with seq_type=1. Setting both also leaves no stale custom values.
+            await self._p.status.set_cleaning_mode(base_mode)
+            values = dict(get_cleaning_mode_parameters(base_mode, features)[0])
+            values["type"] = 1
+            if _flag(features, "is_ctm_with_repeat_supported"):
+                values["repeat"] = int(self._p.status.repeat or self._repeat or 1)
+            await self._p.status.rpc_channel.send_command(CLEAN_THEN_MOP_COMMAND, params=[values])
+            self._room_status["sequence"] = 1
+            return
+
+        await self._p.status.set_cleaning_mode(mode)
+        if supported:
+            # Roborock keeps seq_type independently, so selecting any ordinary
+            # mode must explicitly disable the clean-then-mop sequence.
+            base_mode = CleaningMode(mode)
+            values = dict(get_cleaning_mode_parameters(base_mode, features)[0])
+            values["type"] = 0
+            if _flag(features, "is_ctm_with_repeat_supported"):
+                values["repeat"] = int(self._p.status.repeat or self._repeat or 1)
+            await self._p.status.rpc_channel.send_command(CLEAN_THEN_MOP_COMMAND, params=[values])
+            self._room_status["sequence"] = 0
+
     async def action(self, name: str, params: dict[str, Any]) -> dict[str, Any]:
         p = self._p
         send = p.command.send
@@ -1351,7 +1391,7 @@ class DeviceController:
                 x, y = m.px_to_mm(float(params["x"]), float(params["y"]))
                 await send(RoborockCommand.APP_GOTO_TARGET, [x, y])
             case "set_cleaning_mode":
-                await s.set_cleaning_mode(params["mode"])
+                await self._set_cleaning_mode(params["mode"])
             case "set_fan":
                 await send(RoborockCommand.SET_CUSTOM_MODE, [int(params["code"])])
             case "set_water":

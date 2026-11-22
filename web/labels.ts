@@ -16,7 +16,8 @@ export const STATE_LABEL: Record<string, string> = {
 };
 
 export const MODE_LABEL: Record<string, string> = {
-  vacuum: "Vacuum", vac_and_mop: "Vac & Mop", mop: "Mop", custom: "Custom", smart_mode: "SmartPlan",
+  vacuum: "Vacuum", vac_and_mop: "Vac & Mop", vac_then_mop: "Vac followed by Mop", mop: "Mop",
+  custom: "Custom", smart_mode: "SmartPlan",
 };
 
 export const OPT_LABEL: Record<string, string> = {
