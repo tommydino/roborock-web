@@ -13,7 +13,6 @@ import copy
 import dataclasses
 import errno
 import hashlib
-import importlib
 import json
 import logging
 import os
@@ -65,6 +64,7 @@ from history import (
     map_asset,
     route_from_map,
 )
+from history_rpc import map_diagnostics, probe_history_map, send_history_command
 from maprender import MapRenderer, RenderedMap
 from timeline import read_timeline
 
@@ -91,9 +91,7 @@ CODES_THROTTLED = (
     "Wait a minute and try again. If a code arrived by email in the last few minutes, enter it below."
 )
 SETTING_TIMEOUT = 8.0
-HISTORY_COMMAND_TIMEOUT = 45.0
 WHOLE_HOME_PASSES = (1, 2)  # what the robot takes for cleaning everywhere; rooms and zones go up to 3
-_HISTORY_RPC_LOCK = asyncio.Lock()
 
 S = RoborockStateCode
 CLEANING_STATES = {
@@ -836,7 +834,7 @@ class DeviceController:
         # Map availability can vary between individual records. A missing map
         # for one run must not disable map requests for every later run.
         try:
-            raw = await _send_history_command(
+            raw = await send_history_command(
                 self._p.map_content.rpc_channel,
                 RoborockCommand.GET_CLEAN_RECORD_MAP,
                 {"start_time": rid},
@@ -1000,7 +998,7 @@ class DeviceController:
             except Exception as err:
                 command_errors.append({"command": "get_clean_detail", "error": type(err).__name__})
         try:
-            record = await _send_history_command(
+            record = await send_history_command(
                 self._p.clean_summary.rpc_channel, RoborockCommand.GET_CLEAN_RECORD, [record_id]
             )
         except Exception as err:  # keep other raw replies if one command times out
@@ -1009,7 +1007,7 @@ class DeviceController:
         # Historical maps require the map RPC decoder (protocols 300/301). A
         # normal RPC channel cannot decode those replies, so trace the correct
         # MQTT map channel and record only protocol numbers and payload sizes.
-        record_map, map_transport_events, map_error = await _probe_history_map(
+        record_map, map_transport_events, map_error = await probe_history_map(
             self._p.map_content.rpc_channel,
             RoborockCommand.GET_CLEAN_RECORD_MAP,
             {"start_time": record_id},
@@ -1029,7 +1027,7 @@ class DeviceController:
             "stored_run": self.history.detail(run_id),
             "raw_clean_record": record,
             "raw_clean_detail_events": timeline_events,
-            "record_map": _map_diagnostics(record_map),
+            "record_map": map_diagnostics(record_map),
             "map_transport_events": map_transport_events,
             "command_errors": command_errors,
             "note": (
@@ -1541,130 +1539,6 @@ def _launching_app() -> str:
     """The app this was started from, as macOS lists it under Local Network."""
     names = {"iTerm.app": "iTerm", "Apple_Terminal": "Terminal", "vscode": "Visual Studio Code", "WarpTerminal": "Warp"}
     return names.get(os.environ.get("TERM_PROGRAM", ""), "the app you started it from")
-
-
-async def _send_history_command(
-    channel: Any, method: RoborockCommand | str, params: list[Any] | dict[str, Any], timeout: float = HISTORY_COMMAND_TIMEOUT
-) -> Any:
-    """Give large historical records more time than python-roborock's RPC default."""
-    # python-roborock currently hardcodes a 10-second timeout inside its RPC
-    # channel. An outer wait_for alone cannot extend that inner deadline, so
-    # temporarily raise the channel module's limit for these read-only exports.
-    module = importlib.import_module(type(channel).__module__)
-    original_timeout = getattr(module, "_TIMEOUT", None)
-    async with _HISTORY_RPC_LOCK:
-        try:
-            if original_timeout is not None:
-                module._TIMEOUT = timeout
-            return await asyncio.wait_for(
-                channel.send_command(method, params=params),
-                timeout=timeout + 5,
-            )
-        finally:
-            if original_timeout is not None:
-                module._TIMEOUT = original_timeout
-
-
-async def _probe_history_map(
-    channel: Any, method: str, params: dict[str, Any], timeout: float
-) -> tuple[Any, list[dict[str, Any]], dict[str, Any] | None]:
-    """Probe a map command and observe its MQTT frames without saving payloads."""
-    events: list[dict[str, Any]] = []
-    transport_monitor = "unavailable"
-    unsubscribe = None
-    module = importlib.import_module(type(channel).__module__)
-    inner_timeout_supported = getattr(module, "_TIMEOUT", None) is not None
-
-    def capture(message: Any) -> None:
-        protocol = getattr(message, "protocol", None)
-        try:
-            protocol_number = int(protocol)
-        except (TypeError, ValueError):
-            return
-        if protocol_number not in {101, 102, 300, 301} or len(events) >= 40:
-            return
-        payload = getattr(message, "payload", None)
-        events.append({
-            "event": "mqtt_message",
-            "seq": getattr(message, "seq", None),
-            "protocol": protocol_number,
-            "payload_bytes": len(payload) if isinstance(payload, bytes) else None,
-            "random": getattr(message, "random", None),
-            "timestamp": getattr(message, "timestamp", None),
-        })
-
-    # Map RPC is MQTT-only. Subscribe directly to its transport so a decoder
-    # or logger problem cannot make an empty event list look like no reply.
-    try:
-        strategies_cb = getattr(channel, "_rpc_strategies_cb", None)
-        strategies = strategies_cb() if callable(strategies_cb) else []
-        mqtt = next((item.channel for item in strategies if getattr(item, "name", None) == "mqtt"), None)
-        subscribe = getattr(mqtt, "subscribe", None)
-        if callable(subscribe):
-            unsubscribe = await subscribe(capture)
-            transport_monitor = "mqtt"
-            events.append({"event": "monitor_started", "transport": transport_monitor})
-        else:
-            events.append({"event": "trace_unavailable", "reason": "map MQTT channel not exposed"})
-    except Exception as err:
-        events.append({"event": "trace_unavailable", "reason": type(err).__name__})
-
-    started = time.monotonic()
-    try:
-        raw = await _send_history_command(channel, method, params, timeout=timeout)
-        return raw, events, None
-    except Exception as err:
-        return None, events, {
-            "error": str(err) or type(err).__name__,
-            "error_type": type(err).__name__,
-            "elapsed_seconds": round(time.monotonic() - started, 2),
-            "rpc_module": type(channel).__module__,
-            "inner_timeout_seconds": timeout if inner_timeout_supported else None,
-            "transport_monitored": transport_monitor,
-        }
-    finally:
-        if unsubscribe:
-            unsubscribe()
-
-
-def _map_diagnostics(raw: Any) -> dict[str, Any]:
-    """Describe the saved-map blocks and retain the original bytes for analysis."""
-    if not isinstance(raw, bytes):
-        return {"available": False, "response": raw}
-
-    blocks: list[dict[str, Any]] = []
-    offset = int.from_bytes(raw[2:4], "little") if raw[:2] == b"rr" else len(raw)
-    while 20 <= offset <= len(raw) - 8:
-        block_type = int.from_bytes(raw[offset : offset + 2], "little")
-        header_length = int.from_bytes(raw[offset + 2 : offset + 4], "little")
-        payload_length = int.from_bytes(raw[offset + 4 : offset + 8], "little")
-        end = offset + header_length + payload_length
-        if header_length < 8 or end > len(raw):
-            break
-        block: dict[str, Any] = {
-            "type": block_type,
-            "header_length": header_length,
-            "payload_length": payload_length,
-        }
-        # Block 34 is called NONCEDATA by independent map parsers. Its entries
-        # are timestamps keyed by map-block type, not documented timeline labels.
-        if block_type == 34:
-            entries = []
-            for pos in range(offset + header_length, end - 4, 5):
-                entries.append({
-                    "type": raw[pos],
-                    "unix_time": int.from_bytes(raw[pos + 1 : pos + 5], "little"),
-                })
-            block["timestamp_entries"] = entries
-        blocks.append(block)
-        offset = end
-
-    return {
-        "available": True,
-        "byte_length": len(raw),
-        "blocks": blocks,
-        "raw_base64": base64.b64encode(raw).decode("ascii"),
-    }
 
 
 def _plain(obj: Any, cls: type) -> Any:
