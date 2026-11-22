@@ -3,10 +3,15 @@
 import { runTimeline } from "./run-timeline";
 import { parseTranscript, validTimelineLine } from "./app-timeline";
 import type { AppTimeline } from "./app-timeline";
+import { historyListHtml } from "./list-view";
+import { advanceReplay, deleteHistoryRun, loadHistoryRun, selectRuns } from "./model";
+import type { HistoryResultFilter, HistorySort, HistoryTypeFilter } from "./model";
 import { api, devicePath } from "../api";
 import { $, $opt, closest, errorMessage, esc, fmtArea, fmtDuration, fmtWhen, human, icon, toast } from "../dom";
 import { S } from "../state";
-import type { DeviceTimelineStep, RunDetail, RunSummary, Settings } from "../types";
+import type { DeviceTimelineStep, RunDetail, RunSummary } from "../types";
+
+export { historyCard } from "./list-view";
 
 let runHistory: RunSummary[] = [];
 let historyRequest = 0;
@@ -14,9 +19,9 @@ let fetchingHistoryMap = false;
 let selectedRunId: string | null = null;
 let selectedRun: RunDetail | null = null;
 let runHistoryLoading = true;
-let historyResultFilter: "all" | "completed" | "incomplete" = "all";
-let historyTypeFilter: "all" | "vacuum" | "mopped" | "remopped" = "all";
-let historySort: "newest" | "oldest" | "longest" | "largest" = "newest";
+let historyResultFilter: HistoryResultFilter = "all";
+let historyTypeFilter: HistoryTypeFilter = "all";
+let historySort: HistorySort = "newest";
 let routeProgress = 0;
 let routeTimer: number | null = null;
 let routeSpeed = 1;
@@ -38,19 +43,6 @@ export async function loadRunHistory(): Promise<void> {
     runHistoryLoading = false;
   }
   renderRunHistory();
-}
-
-export function historyCard(summary: Settings["summary"]): string {
-  let content = summary ? `<div class="big-stats">
-    <div class="stat"><b>${summary.total_time != null ? Math.round(summary.total_time / 3600) + " h" : "–"}</b><span>Total time</span></div>
-    <div class="stat"><b>${fmtArea(summary.total_area)}</b><span>Total area</span></div>
-    <div class="stat"><b>${summary.count ?? "–"}</b><span>Cleanings</span></div></div>` : "";
-  if (summary?.last) {
-    content += `<dl class="kv"><dt>Last clean</dt><dd>${fmtWhen(summary.last.begin)}</dd><dt>Duration</dt><dd>${fmtDuration(summary.last.duration)}</dd><dt>Area</dt><dd>${fmtArea(summary.last.area)}</dd><dt>Finished</dt><dd>${summary.last.complete ? "Yes" : "No"}</dd></dl>`;
-  }
-  if (!summary) content = `<p class="muted">Robot history summary isn't available right now. Locally saved runs are shown below.</p>`;
-  return `<div class="card history-card" id="history-runs"><div class="card-head"><h3 class="card-title">${icon("history")}History</h3></div>${content}
-    <div id="history-runs-list"><p class="muted">Loading run history…</p></div><div id="history-run-detail"></div></div>`;
 }
 
 function routeSvg(run: RunDetail): string {
@@ -373,40 +365,9 @@ export function renderRunHistory(): void {
   if (!list || !detail) return;
   list.hidden = selectedRunId !== null;
   detail.hidden = selectedRunId === null;
-  const filteredRuns = runHistory.filter((run) => {
-    if (historyResultFilter === "completed" && run.complete !== true) return false;
-    if (historyResultFilter === "incomplete" && run.complete !== false) return false;
-    if (historyTypeFilter === "vacuum" && run.mopped) return false;
-    if (historyTypeFilter === "mopped" && !run.mopped) return false;
-    if (historyTypeFilter === "remopped" && !run.remopped) return false;
-    return true;
-  }).sort((a, b) => {
-    if (historySort === "oldest") return a.begin - b.begin;
-    if (historySort === "longest") return (b.duration ?? 0) - (a.duration ?? 0);
-    if (historySort === "largest") return (b.area ?? 0) - (a.area ?? 0);
-    return b.begin - a.begin;
-  });
-  list.innerHTML = selectedRunId ? "" : runHistory.length
-    ? `<div class="history-runs-head"><div class="history-runs-label">Recent runs <small>${filteredRuns.length} of ${runHistory.length}</small></div>
-      <div class="history-run-filters">
-        <label>Result<select data-history-result><option value="all"${historyResultFilter === "all" ? " selected" : ""}>All</option><option value="completed"${historyResultFilter === "completed" ? " selected" : ""}>Completed</option><option value="incomplete"${historyResultFilter === "incomplete" ? " selected" : ""}>Stopped</option></select></label>
-        <label>Cleaning<select data-history-type><option value="all"${historyTypeFilter === "all" ? " selected" : ""}>All</option><option value="vacuum"${historyTypeFilter === "vacuum" ? " selected" : ""}>Vacuum only</option><option value="mopped"${historyTypeFilter === "mopped" ? " selected" : ""}>Mopped</option><option value="remopped"${historyTypeFilter === "remopped" ? " selected" : ""}>Re-mopped</option></select></label>
-        <label>Sort<select data-history-sort><option value="newest"${historySort === "newest" ? " selected" : ""}>Newest</option><option value="oldest"${historySort === "oldest" ? " selected" : ""}>Oldest</option><option value="longest"${historySort === "longest" ? " selected" : ""}>Longest</option><option value="largest"${historySort === "largest" ? " selected" : ""}>Largest area</option></select></label>
-      </div></div>${filteredRuns.length ? `<ul class="history-runs-list">${filteredRuns.map((run) => {
-      const mode = run.mode?.replaceAll("_", " ");
-      const badges = [
-        run.complete === false ? "Stopped" : null,
-        run.remopped ? "Re-mopped" : run.mopped ? "Mopped" : "Vacuum",
-        run.empty_count ? `Emptied ×${run.empty_count}` : run.dust_collected ? "Dust collected" : null,
-        run.wash_count ? `Mop wash ×${run.wash_count}` : null,
-      ].filter((value): value is string => !!value);
-      return `<li class="history-run-item"><button class="run-open" data-run="${esc(run.id)}"><span class="run-when">${esc(fmtWhen(run.begin))}</span>
-        <span class="run-what">${fmtDuration(run.duration)} · ${fmtArea(run.area)}${mode ? ` · ${esc(mode)}` : ""}${run.mopped ? " · mopped" : ""}</span>
-        <span class="run-badges">${badges.map(badge => `<i>${esc(badge)}</i>`).join("")}</span>
-        <span class="run-route-note">${run.mapped ? "Route available · open replay" : run.source !== "demo" ? "Open to load route map" : "Summary only"}</span></button>
-        <button class="run-delete" data-run-delete="${esc(run.id)}" aria-label="Delete cleaning run" title="Delete run">${icon("trash")}</button></li>`;
-    }).join("")}</ul>` : `<p class="muted history-filter-empty">No runs match these filters.</p>`}`
-    : `<p class="muted">${runHistoryLoading ? "Loading run history…" : "No recent runs available."}</p>`;
+  const filters = { result: historyResultFilter, type: historyTypeFilter, sort: historySort };
+  const filteredRuns = selectRuns(runHistory, filters);
+  list.innerHTML = selectedRunId ? "" : historyListHtml(runHistory, filteredRuns, runHistoryLoading, filters);
   detail.innerHTML = runDetailHtml();
   syncRouteProgress();
   syncSpeedButtons();
@@ -441,17 +402,14 @@ async function openHistoryRun(id: string): Promise<void> {
   const path = devicePath(`runs/${encodeURIComponent(id)}`);
   fetchingHistoryMap = false;
   try {
-    const cached = await api<RunDetail>(path + "?cached=true");
-    if (!current()) return;
-    selectedRun = cached;
-    const needsMap = !cached.route || !cached.map;
-    if ((needsMap || cached.record_details == null || cached.needs_timeline) && cached.source !== "demo") {
+    const loaded = await loadHistoryRun(path, (target) => api<RunDetail>(target), (cached, needsMap) => {
+      if (!current()) return;
+      selectedRun = cached;
       fetchingHistoryMap = needsMap;
       renderRunHistory();
-      const refreshed = await api<RunDetail>(path);
-      if (!current()) return;
-      selectedRun = refreshed;
-    }
+    });
+    if (!current()) return;
+    selectedRun = loaded;
   } catch (e) {
     if (current()) {
       toast(`Couldn't load run details: ${errorMessage(e)}`, true);
@@ -547,14 +505,13 @@ settingsRoot.addEventListener("click", async (e) => {
     if (!run || !confirm(`Delete the cleaning run from ${fmtWhen(run.begin)} from ${target}? This cannot be undone.`)) return;
     deleteButton.disabled = true;
     try {
-      await api<void>(devicePath(`runs/${encodeURIComponent(id)}`), { method: "DELETE" });
+      runHistory = await deleteHistoryRun(runHistory, id, () => api<void>(devicePath(`runs/${encodeURIComponent(id)}`), { method: "DELETE" }));
       if (routeTimer != null) window.clearInterval(routeTimer);
       routeTimer = null;
       if (selectedRunId === id) {
         selectedRunId = null;
         selectedRun = null;
       }
-      runHistory = runHistory.filter((item) => item.id !== id);
       renderRunHistory();
       toast("Cleaning run deleted");
       document.dispatchEvent(new CustomEvent("settings-refresh-request"));
@@ -601,7 +558,7 @@ settingsRoot.addEventListener("click", async (e) => {
   if (range) range.value = String(routeProgress);
   syncRouteProgress();
   routeTimer = window.setInterval(() => {
-    routeProgress = Math.min(1000, routeProgress + (50 * routeSpeed * 1000) / 60_000);
+    routeProgress = advanceReplay(routeProgress, routeSpeed);
     const slider = settingsRoot.querySelector<HTMLInputElement>("#run-progress");
     if (slider) slider.value = String(routeProgress);
     syncRouteProgress();
