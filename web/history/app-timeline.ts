@@ -22,3 +22,4 @@ export function parseTranscript(text: string, runId: string): AppTimeline {
   }
   return {run_id: runId, summary: data.summary, area_m2: data.area_m2, events: data.events};
 }
+

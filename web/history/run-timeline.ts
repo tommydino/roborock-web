@@ -1,4 +1,4 @@
-import type { RunDetail } from "./types";
+import type { RunDetail } from "../types";
 
 type RunEvent = NonNullable<RunDetail["events"]>[number];
 
@@ -74,3 +74,4 @@ export function runTimeline(run: RunDetail, result: string): TimelineStep[] {
   });
   return steps;
 }
+
