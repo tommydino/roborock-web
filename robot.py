@@ -1309,14 +1309,13 @@ class DeviceController:
             if not supported:
                 raise ValueError("Vac followed by Mop is not supported by this robot")
             base_mode = CleaningMode.VAC_AND_MOP
-            # The official app sends the ordinary Vac & Mop motor values along
-            # with seq_type=1. Setting both also leaves no stale custom values.
-            await self._p.status.set_cleaning_mode(base_mode)
+            # This command sets the motor values and sequence together. Unlike
+            # set_clean_motor_mode, its params are one object, not a list.
             values = dict(get_cleaning_mode_parameters(base_mode, features)[0])
             values["type"] = 1
             if _flag(features, "is_ctm_with_repeat_supported"):
                 values["repeat"] = int(self._p.status.repeat or self._repeat or 1)
-            await self._p.status.rpc_channel.send_command(CLEAN_THEN_MOP_COMMAND, params=[values])
+            await self._p.status.rpc_channel.send_command(CLEAN_THEN_MOP_COMMAND, params=values)
             self._room_status["sequence"] = 1
             return
 
@@ -1327,9 +1326,7 @@ class DeviceController:
             base_mode = CleaningMode(mode)
             values = dict(get_cleaning_mode_parameters(base_mode, features)[0])
             values["type"] = 0
-            if _flag(features, "is_ctm_with_repeat_supported"):
-                values["repeat"] = int(self._p.status.repeat or self._repeat or 1)
-            await self._p.status.rpc_channel.send_command(CLEAN_THEN_MOP_COMMAND, params=[values])
+            await self._p.status.rpc_channel.send_command(CLEAN_THEN_MOP_COMMAND, params=values)
             self._room_status["sequence"] = 0
 
     async def action(self, name: str, params: dict[str, Any]) -> dict[str, Any]:
