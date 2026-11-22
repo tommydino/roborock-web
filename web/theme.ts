@@ -28,7 +28,7 @@ function applyTheme(): void {
     root.dataset.theme = theme;
     document.dispatchEvent(new CustomEvent("themechange"));
   }
-  document.getElementById("theme-color")?.setAttribute("content", theme === "dark" ? "#0b0f17" : "#f4f6f9");
+  document.getElementById("theme-color")?.setAttribute("content", theme === "dark" ? "#09090b" : "#f4f6f9");
   renderThemeControls();
 }
 

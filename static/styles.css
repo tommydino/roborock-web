@@ -53,48 +53,46 @@
   --mask-dim: 255, 255, 255;
   --mask-dim-a: 135;
   --map-filter: none;
-  --plan-paper: #fffefb;
-  --plan-carpet: #f4f0e7;
-  --plan-hatch: rgba(140, 115, 70, 0.22);
-  --plan-wall: #2b3340;
-  --plan-furniture: #dfe3e9;
-  --plan-grid: rgba(43, 51, 64, 0.07);
-  --plan-edge: rgba(43, 51, 64, 0.22);
-  --plan-ink: #2b3340;
-  --map3d-wall: #f6f7fa;
-  --map3d-furniture: #e1e5ec;
+  --plan-paper: #f7f9fc;
+  --plan-hatch: rgba(27, 34, 48, 0.16);
+  --plan-wall: #1b2230;
+  --plan-furniture: #e2e6ee;
+  --plan-grid: rgba(27, 34, 48, 0.07);
+  --plan-ink: #1b2230;
+  --map3d-wall: #ffffff;
+  --map3d-furniture: #e4e1da;
   --map3d-floor: #ffffff;
-  --map3d-ground: #d9e1ee;
+  --map3d-ground: #dfe4ec;
   --map3d-rug: #f2e8d5;
-  --carpet-tint: rgba(255, 248, 235, 0.3);
-  --carpet-hatch: rgba(80, 52, 24, 0.45);
+  --carpet-tint: rgba(255, 255, 255, 0.16);
+  --carpet-hatch: rgba(255, 255, 255, 0.5);
   --halo: rgba(255, 255, 255, 0.95);
   /* Freshness: one warm hue, light (cleaned lately) to dark (long ago), then "never reached". */
-  --fresh-0: #f9e0cc;
-  --fresh-1: #f4c49e;
-  --fresh-2: #eca06f;
-  --fresh-3: #de7642;
-  --fresh-4: #b9531f;
-  --fresh-5: #7a3210;
-  --fresh-none: #e6e8ec;
-  --fresh-none-hatch: rgba(120, 128, 140, 0.35);
-  --fresh-wall: #8b9099;
-  --fresh-furniture: #d5d9df;
+  --fresh-0: #f7e35a;
+  --fresh-1: #fca636;
+  --fresh-2: #eb6a5b;
+  --fresh-3: #c13b84;
+  --fresh-4: #7a08a6;
+  --fresh-5: #2c0594;
+  --fresh-none: #ebe9f0;
+  --fresh-none-hatch: rgba(110, 104, 130, 0.32);
+  --fresh-wall: #262833;
+  --fresh-furniture: #d7d4de;
   /* Suspects: an evidence-board paper floor; spots glow mustard to crimson by how often something stood there. */
-  --sus-paper: #f7f3ea;
-  --sus-wall: #6f6a62;
-  --sus-furniture: #e2ddd2;
-  --sus-nodata: #ebe8e1;
-  --sus-resident: #b5afa4;
+  --sus-paper: #f6f3ec;
+  --sus-wall: #2a2a33;
+  --sus-furniture: #dcd8d0;
+  --sus-nodata: #ecebe8;
+  --sus-resident: #b9b4c4;
   --sus-hatch: rgba(111, 106, 98, 0.35);
-  --sus-0: #f2d27b;
-  --sus-2: #d9662f;
-  --sus-3: #b3261e;
-  --sus-closed: #cfcac0;
-  --sus-unchecked: #c7bfd9;
-  --sus-ghost: #b3261e;
-  --sus-trace: #ecdcb4;
-  --sus-tag: #f6c945;
+  --sus-0: #f5c518;
+  --sus-2: #ff7a1a;
+  --sus-3: #ef2b4f;
+  --sus-closed: #b8c0cc;
+  --sus-unchecked: #a58bff;
+  --sus-ghost: #ef2b4f;
+  --sus-trace: #f3e2b0;
+  --sus-tag: #ffd02a;
   --sus-tag-ink: #1c1917;
 
   /* Density: compact by default (short laptop windows), roomier on taller ones. */
@@ -122,31 +120,50 @@
   --map-head-h: 44px;
   --map-foot-h: 36px;
   color-scheme: light;
+  --room-0: #2fca8a;
+  --room-1: #ff7f57;
+  --room-2: #f5bd3d;
+  --room-3: #a874f0;
+  --room-4: #2cbfdc;
+  --room-5: #f2659d;
+  --room-6: #6f8dff;
+  --room-7: #8fd14f;
+  --room-8: #ff9f2e;
+  --room-9: #26b8a8;
+  --room-10: #df6ef2;
+  --room-11: #4aa3ff;
+  --map-wall: #1e2230;
+  --map-floor: #e9e5dd;
+  --map-furniture: #cbc4b8;
+  --map-edge-shade: rgba(24, 16, 48, 0.45);
+  --map-halo: rgba(15, 23, 42, 0.28);
+  --map-glow: 0;
+  --plan-wash: 0.16;
 }
 
 /* Dark: index.html and web/theme.ts set data-theme from the user's choice (Light is the default). */
 :root[data-theme="dark"] {
-  --bg: #0b0f17;
-  --card: #121826;
-  --card-border: #1f2737;
-  --line: #1b2331;
-  --surface: #1a2130;
-  --surface-2: #242d3e;
-  --stage: #1a2231;
-  --rail-foot: #0f1521;
-  --text: #e8edf6;
-  --muted: #a3aec2;
-  --faint: #7f8aa0;
+  --bg: #09090b;
+  --card: #131315;
+  --card-border: #242427;
+  --line: #1e1e21;
+  --surface: #1b1b1e;
+  --surface-2: #26262a;
+  --stage: #0f0f11;
+  --rail-foot: #0f0f11;
+  --text: #ededef;
+  --muted: #a6a6ad;
+  --faint: #85858d;
   --primary: #6c95f7;
   --primary-hover: #84a7fa;
-  --primary-ink: #0b0f17;
-  --ok-ink: #0b0f17;
+  --primary-ink: #09090b;
+  --ok-ink: #09090b;
   --primary-soft: rgba(108, 149, 247, 0.16);
   --primary-shadow: 0 6px 16px -8px rgba(108, 149, 247, 0.6);
   --accent: #6c95f7;
   --accent-strong: #84a7fa;
   --accent-soft: rgba(108, 149, 247, 0.16);
-  --accent-ink: #0b0f17;
+  --accent-ink: #09090b;
   --ok: #3cc58c;
   --ok-soft: rgba(60, 197, 140, 0.14);
   --warn: #f0b44f;
@@ -154,57 +171,75 @@
   --danger: #f06a6e;
   --danger-ink: #ff8a8d;
   --danger-soft: rgba(240, 106, 110, 0.14);
-  --seg-active: #2c3648;
-  --seg-ring: #7f8aa0;
+  --seg-active: #2b2b2f;
+  --seg-ring: #82828b;
   --seg-shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 0 0 1px var(--seg-ring);
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
   --shadow-float: 0 1px 2px rgba(0, 0, 0, 0.4), 0 8px 20px rgba(0, 0, 0, 0.35);
   --shadow-lift: 0 4px 12px rgba(0, 0, 0, 0.4), 0 18px 40px rgba(0, 0, 0, 0.5);
   --scroll-shade: rgba(0, 0, 0, 0.5);
-  --mask-dim: 26, 34, 49;
+  --mask-dim: 15, 15, 17;
   --mask-dim-a: 165;
-  --map-filter: brightness(0.82);
+  --map-filter: none;
   /* the same hue stepped for the dark surface: what's stale glows, what's fresh recedes */
-  --fresh-0: #3b2a20;
-  --fresh-1: #5e3b24;
-  --fresh-2: #8c5027;
-  --fresh-3: #c26b2c;
-  --fresh-4: #ea8b45;
-  --fresh-5: #ffb87a;
-  --fresh-none: #232b3a;
-  --fresh-none-hatch: rgba(160, 170, 190, 0.22);
-  --fresh-wall: #a3a9b3;
-  --fresh-furniture: #2c3444;
-  --sus-paper: #1c2230;
-  --sus-wall: #a7a196;
-  --sus-furniture: #2a3040;
-  --sus-nodata: #202736;
-  --sus-resident: #4a4f5c;
+  --fresh-0: #2a0a6e;
+  --fresh-1: #6a00a8;
+  --fresh-2: #b12a90;
+  --fresh-3: #e16462;
+  --fresh-4: #fca636;
+  --fresh-5: #f0f921;
+  --fresh-none: #1c1c20;
+  --fresh-none-hatch: rgba(200, 200, 215, 0.16);
+  --fresh-wall: #8a8a92;
+  --fresh-furniture: #2a2a30;
+  --sus-paper: #141416;
+  --sus-wall: #8b8b93;
+  --sus-furniture: #232327;
+  --sus-nodata: #1a1a1d;
+  --sus-resident: #3d3d45;
   --sus-hatch: rgba(190, 180, 160, 0.2);
-  --sus-0: #6b5a2a;
-  --sus-2: #d9783a;
-  --sus-3: #ff8a70;
-  --sus-closed: #3d4250;
-  --sus-unchecked: #4a4566;
-  --sus-ghost: #ff8a70;
-  --sus-trace: #3a3524;
-  --plan-paper: #182032;
-  --plan-carpet: #1f2839;
-  --plan-hatch: rgba(225, 205, 160, 0.14);
-  --plan-wall: #d3dbe8;
-  --plan-furniture: #2c3649;
-  --plan-grid: rgba(211, 219, 232, 0.06);
-  --plan-edge: rgba(211, 219, 232, 0.2);
-  --plan-ink: #e6ebf3;
-  --map3d-wall: #3d4a5f;
-  --map3d-furniture: #2c3649;
-  --map3d-floor: #a3abbb;
-  --map3d-ground: #1a2232;
-  --map3d-rug: #75654d;
-  --carpet-tint: rgba(255, 240, 215, 0.14);
-  --carpet-hatch: rgba(250, 225, 185, 0.42);
-  --halo: rgba(11, 15, 23, 0.85);
+  --sus-0: #d9ab12;
+  --sus-2: #ff8a3d;
+  --sus-3: #ff4d6a;
+  --sus-closed: #4a4f5a;
+  --sus-unchecked: #8a74f0;
+  --sus-ghost: #ff4d6a;
+  --sus-trace: #3a3320;
+  --plan-paper: #0d0d0f;
+  --plan-hatch: rgba(255, 255, 255, 0.12);
+  --plan-wall: #f4f4f5;
+  --plan-furniture: #1d1d21;
+  --plan-grid: rgba(255, 255, 255, 0.05);
+  --plan-ink: #f4f4f5;
+  --map3d-wall: #2e2e34;
+  --map3d-furniture: #232328;
+  --map3d-floor: #f2f2f2;
+  --map3d-ground: #0f0f11;
+  --map3d-rug: #6b5a44;
+  --carpet-tint: rgba(255, 255, 255, 0.08);
+  --carpet-hatch: rgba(255, 255, 255, 0.32);
+  --halo: rgba(9, 9, 11, 0.85);
   color-scheme: dark;
+  --room-0: #18b877;
+  --room-1: #f06a44;
+  --room-2: #e0a92a;
+  --room-3: #9058e0;
+  --room-4: #18a9c9;
+  --room-5: #e04f88;
+  --room-6: #5a76f0;
+  --room-7: #74b83a;
+  --room-8: #f08a1c;
+  --room-9: #16a394;
+  --room-10: #c656dc;
+  --room-11: #3a8ef0;
+  --map-wall: #08080a;
+  --map-floor: #2a2a2e;
+  --map-furniture: #3a3a41;
+  --map-edge-shade: rgba(0, 0, 0, 0.6);
+  --map-halo: rgba(0, 0, 0, 0.6);
+  --map-glow: 0.6;
+  --plan-wash: 0.13;
+  --plan-glow: rgba(255, 255, 255, 0.3);
 }
 
 @media (min-width: 1440px) {
@@ -531,6 +566,8 @@ svg.i.tiny { width: 12px; height: 12px; }
 .room-label { position: absolute; transform: translate(-50%, -50%) scale(var(--inv, 1)); padding: 5px 10px 5px 9px; border-radius: 999px; background: rgba(255, 255, 255, 0.86); color: #1d2840; font-size: 12px; font-weight: 700; white-space: nowrap; box-shadow: 0 2px 8px rgba(15, 23, 42, 0.1); backdrop-filter: blur(6px); display: inline-flex; align-items: center; gap: 5px; transition: background .15s, color .15s; }
 .room-label.sel { background: var(--accent); color: #fff; }
 .room-label .tick { width: 14px; height: 14px; display: none; stroke-width: 2.6; }
+.room-label .dot { width: 9px; height: 9px; border-radius: 50%; flex: none; box-shadow: inset 0 0 0 1.5px rgba(0, 0, 0, 0.14); }
+.room-label.sel .dot { display: none; }
 .room-label.sel .tick { display: block; }
 .map-inner:not(.rooms) .room-label { pointer-events: none; }
 .marker { position: absolute; transform: translate(-50%, -50%) scale(var(--inv, 1)); pointer-events: none; }
@@ -599,7 +636,8 @@ svg.i.tiny { width: 12px; height: 12px; }
 .map-inner.plan img.map-carpets { display: none; }
 .map-inner svg.map-info { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
 .map-info .path, .map-info .mop-path { fill: none; stroke-width: 0.8; stroke-linejoin: round; stroke-linecap: round; vector-effect: non-scaling-stroke; }
-.map-info .path { stroke: rgba(255, 255, 255, 0.5); }
+.map-info .path { stroke: rgba(255, 255, 255, 0.55); }
+:root[data-theme="dark"] .map-info .path { stroke: rgba(255, 255, 255, 0.32); }
 .map-info .mop-path { stroke: rgba(150, 205, 255, 0.45); }
 .map-inner.plan .map-info .path { stroke: var(--accent); stroke-opacity: 0.45; stroke-width: 0.7; }
 .map-inner.plan .map-info .mop-path { stroke: rgba(76, 125, 240, 0.3); stroke-width: 0.7; }

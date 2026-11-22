@@ -280,7 +280,7 @@ export class Map3D {
   /* ---------- data ---------- */
 
   /** Called whenever the app has a new map. Cheap when only the robot moved. */
-  setMap(m: MapPayload, mask: Mask, maskKey: string, homeBox: Box): void {
+  setMap(m: MapPayload, mask: Mask, maskKey: string, homeBox: Box, floor = m.base): void {
     const sizeChanged = mask.w !== this.W || mask.h !== this.H;
     const wasHome = this.atHome();
     this.W = mask.w;
@@ -305,7 +305,7 @@ export class Map3D {
       this.maskKey = maskKey;
       this.buildWalls(mask);
     }
-    this.setFloorImage(m.base);
+    this.setFloorImage(floor);
     this.setRobot(m.robot, m.charger, sizeChanged);
     // Re-frame a new map, or the same one if it grew while you were at the starting view.
     if (sizeChanged || (homeMoved && wasHome)) this.resetView(false);

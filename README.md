@@ -77,9 +77,9 @@ While you're drawing a cleaning zone or editing walls, dragging draws instead of
 
 Switch views with **2D / 3D / Plan / Freshness / Suspects** above the map. The app remembers your choice.
 
-- **2D**: the colour map, with the robot's path.
+- **2D**: the colour map: every room in its own jewel tone (they glow on black in the dark theme), with the robot's path.
 - **3D**: your home with raised walls and furniture, the robot and dock as little models, and invisible walls and zones as tinted glass. **Drag to turn** it, swipe with two fingers to move, pinch to zoom, and click rooms to pick them. Zones, go-to and editing switch back to 2D. The 3D library ([three.js](https://threejs.org), MIT) is bundled into a separate file that only loads the first time you open 3D.
-- **Plan**: an architect-style drawing with walls, carpets and a 1 m grid. Each room shows its floor area, and the footer adds up the area of the whole home or of the rooms you picked.
+- **Plan**: a blueprint, with each room outlined in its colour, carpets and a 1 m grid. Each room shows its floor area, and the footer adds up the area of the whole home or of the rooms you picked.
 - **Freshness**: the floor coloured by how long ago each spot was cleaned. See below.
 - **Suspects**: things that come and go on your floor, found from spots the robot usually reaches but sometimes can't. See below.
 

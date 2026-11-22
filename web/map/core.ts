@@ -5,6 +5,7 @@ import { $, $$, clamp, closest, cssVar, esc, fmtArea, hexRgb, icon, loadImg, pct
 import { doAction, renderActions, renderStatus } from "../panels";
 import { freshLabel, freshMapChanged } from "../freshness";
 import { renderSuspectTags, suspectsMapChanged } from "../suspects";
+import { roomCss } from "./paint";
 import { pollMap } from "../session";
 import { S, type Tool } from "../state";
 import type { MapResponse, Mask, Point } from "../types";
@@ -106,7 +107,9 @@ function renderLabels(): void {
       const sel = S.edit ? S.edit.mode === "rooms" && S.edit.rooms.includes(r.id) : S.tool === "rooms" && S.selected.includes(r.id);
       const fresh = S.viewMode === "fresh" ? freshLabel(r.id) : null;
       const area = fresh ? `<span class="area">${esc(fresh.text)}</span>` : S.viewMode === "plan" && r.area ? `<span class="area">${fmtArea(r.area)}</span>` : "";
-      return `<button class="room-label ${sel ? "sel" : ""} ${fresh?.due ? "due" : ""}" data-room="${r.id}" style="left:${pct(r.x, m.width)};top:${pct(r.y, m.height)}">${icon("check", "i tick")}<span class="nm">${esc(r.name)}</span>${area}</button>`;
+      const swatch = S.viewMode === "2d" ? roomCss(r.id) : null; // the room's colour, as on the map
+      const dot = swatch ? `<i class="dot" style="background:${swatch}"></i>` : "";
+      return `<button class="room-label ${sel ? "sel" : ""} ${fresh?.due ? "due" : ""}" data-room="${r.id}" style="left:${pct(r.x, m.width)};top:${pct(r.y, m.height)}">${icon("check", "i tick")}${dot}<span class="nm">${esc(r.name)}</span>${area}</button>`;
     })
     .join("");
 }
