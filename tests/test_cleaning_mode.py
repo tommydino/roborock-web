@@ -32,17 +32,17 @@ class CleaningModeTest(unittest.IsolatedAsyncioTestCase):
         controller._room_status = {}
         return controller, status
 
-    async def test_clean_then_mop_sets_base_mode_and_sequence_flag(self):
+    async def test_clean_then_mop_uses_the_commands_object_payload(self):
         controller, status = self.controller()
         with patch("robot.get_cleaning_mode_parameters", return_value=[{
             "fan_power": 102, "water_box_mode": 235, "mop_mode": 300,
         }]):
             await controller._set_cleaning_mode("vac_then_mop")
 
-        status.set_cleaning_mode.assert_awaited_once()
-        status.rpc_channel.send_command.assert_awaited_once_with(CLEAN_THEN_MOP_COMMAND, params=[{
+        status.set_cleaning_mode.assert_not_awaited()
+        status.rpc_channel.send_command.assert_awaited_once_with(CLEAN_THEN_MOP_COMMAND, params={
             "fan_power": 102, "water_box_mode": 235, "mop_mode": 300, "type": 1, "repeat": 1,
-        }])
+        })
         self.assertEqual(controller._room_status["sequence"], 1)
 
     async def test_ordinary_mode_disables_sequence_flag(self):
@@ -53,7 +53,8 @@ class CleaningModeTest(unittest.IsolatedAsyncioTestCase):
             await controller._set_cleaning_mode("vacuum")
 
         status.set_cleaning_mode.assert_awaited_once_with("vacuum")
-        self.assertEqual(status.rpc_channel.send_command.await_args.kwargs["params"][0]["type"], 0)
+        self.assertEqual(status.rpc_channel.send_command.await_args.kwargs["params"]["type"], 0)
+        self.assertNotIn("repeat", status.rpc_channel.send_command.await_args.kwargs["params"])
         self.assertEqual(controller._room_status["sequence"], 0)
 
     async def test_forced_status_refresh_does_not_return_cached_mode(self):
