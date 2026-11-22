@@ -101,6 +101,7 @@ export interface Obstacle extends Point {
   type?: number;
   label: string;
   photo: boolean;
+  photo_id?: string | null;
 }
 
 export interface MapPayload {

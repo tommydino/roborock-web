@@ -324,7 +324,9 @@ def _things(map_data: MapData) -> dict[str, Any]:
         kind, label = obstacle_kind(o.details.description, obstacle_type)
         obstacles.append({
             "x": q[0], "y": q[1], "kind": kind, "label": label,
-            "type": obstacle_type, "photo": bool(o.details.photo_name),
+            "type": obstacle_type,
+            "photo": bool(o.details.photo_name),
+            "photo_id": o.details.photo_name or None,
         })
 
     def area(a: Any) -> list[list[float]]:

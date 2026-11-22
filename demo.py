@@ -645,6 +645,9 @@ class DemoController:
         if not self.history.remove(run_id):
             raise ValueError("Cleaning run not found")
 
+    async def obstacle_photo(self, photo_id: str) -> tuple[bytes, str]:
+        raise ValueError("The demo robot has no obstacle photos")
+
     async def suspects(self) -> dict[str, Any]:
         self._tick()
         m = self._rendered()

@@ -664,6 +664,8 @@ svg.i.tiny { width: 12px; height: 12px; }
 .map-object-info { position: absolute; z-index: 10; transform: translate(-50%, -100%); max-width: min(280px, calc(100% - 24px)); padding: 9px 12px; border-radius: 10px; background: var(--text); color: var(--card); box-shadow: var(--shadow-lift); font-size: 12px; font-weight: 650; line-height: 1.35; text-align: center; pointer-events: none; }
 .map-object-info::after { content: ""; position: absolute; top: 100%; left: 50%; margin-left: -6px; border: 6px solid transparent; border-top-color: var(--text); }
 .map-object-info[hidden] { display: none; }
+.map-object-info .obstacle-photo { display: block; width: min(240px, 70vw); max-height: 220px; margin-top: 8px; border-radius: 8px; object-fit: contain; background: #111; }
+.obstacle-photo-error { margin-top: 6px; color: var(--muted); font-weight: 500; }
 .map-inner.hide-path .map-info .path, .map-inner.hide-path .map-info .mop-path { display: none; }
 .map-inner.hide-carpets img.map-carpets { display: none; }
 .map-inner.hide-obstacles .thing:not(.goto) { display: none; }
