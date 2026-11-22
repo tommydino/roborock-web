@@ -17,6 +17,9 @@ import { logout, reconnect, refreshAuth, startLoops } from "./session";
 import { loadSettings, setChoice } from "./settings";
 import { S, type EditTool, type ViewMode } from "./state";
 import "./theme";
+import { initAssist } from "./assist";
+
+initAssist();
 
 // Bring the robot into view, wherever it is: switch to Home, then center on it.
 function showRobot(): void {
