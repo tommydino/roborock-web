@@ -11,6 +11,34 @@ from robot import DeviceController, S
 
 
 class LiveTimelineTest(unittest.IsolatedAsyncioTestCase):
+    def test_versioned_backup_restores_runs_maps_and_observations(self):
+        begin = int(time.time()) - 300
+        source = History(None)
+        source.add(Run("backup-run", begin, begin + 120, route={"map": "map-1"}),
+                   {"base": "data:image/png;base64,test", "width": 10, "height": 10})
+        source.observe(begin + 10, "Washing mop", "Deep | Warm Water")
+        backup = source.export_backup()
+        self.assertEqual(backup["format"], "roborock-web-history-v1")
+        self.assertEqual(backup["version"], 1)
+
+        restored = History(None)
+        restored.import_backup(backup)
+        detail = restored.detail("backup-run")
+        self.assertEqual(detail["map"]["width"], 10)
+        self.assertEqual(detail["events"], [{"at": begin + 10, "label": "Washing mop",
+                                              "detail": "Deep | Warm Water"}])
+        restored._observations.close()
+        source._observations.close()
+
+    def test_old_history_and_newer_unknown_run_fields_remain_readable(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "history.json"
+            path.write_text('{"created":1,"runs":[{"id":"old","begin":1,"end":2,'
+                            '"future_field":true}],"maps":{},"intervals":{}}')
+            history = History(path)
+            self.assertTrue(history.has("old"))
+            history._observations.close()
+
     def test_run_detail_reads_observed_events_once(self):
         history = History(None)
         now = int(time.time())
