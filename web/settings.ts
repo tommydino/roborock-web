@@ -8,6 +8,7 @@ import { S } from "./state";
 import { notifyEnabled, notifySupported, setNotify } from "./notify";
 import { themeChoice } from "./theme";
 import type { Choice, Settings } from "./types";
+import { aiCardHtml, renderAiCard } from "./assist";
 
 export async function loadSettings(): Promise<void> {
   const el = $("#settings");
@@ -121,6 +122,8 @@ export function renderSettings(): void {
     <div class="row stack"><div class="row-main"><span class="row-icon">${icon("contrast")}</span><div><div class="row-title">Theme</div><div class="row-sub">Auto follows your Mac's light or dark setting</div></div></div>${themeChoice()}</div>
     ${row("spark", "SmartPlan", "Offer SmartPlan in Cleaning mode", sw("smartplan", smartPlanShown()))}</div>`);
 
+  cards.push(aiCardHtml());
+
   // About
   const d = s.device ?? {};
   const n = s.network ?? {};
@@ -139,6 +142,7 @@ export function renderSettings(): void {
     </div></div>`);
 
   $("#settings").innerHTML = cards.join("");
+  void renderAiCard();
 
   const vol = $opt<HTMLInputElement>("#vol");
   if (vol) {

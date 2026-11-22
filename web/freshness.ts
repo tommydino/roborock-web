@@ -9,6 +9,7 @@ import { mapImg, stage } from "./map/elements";
 import { estimateText, roomsArea } from "./estimate";
 import { loadSuspects, suspectTip } from "./suspects";
 import { doAction, passes } from "./panels";
+import { explainHtml } from "./assist";
 import { S } from "./state";
 import type { Freshness, RoomFreshness } from "./types";
 
@@ -287,7 +288,8 @@ export function renderFreshPanel(): void {
     .map((run) => {
       const where = run.rooms.length ? run.rooms.map((id) => esc(names.get(id) ?? `Room ${id}`)).join(", ") : run.mapped ? "Part of a room" : "No map for this run";
       return `<li><div class="run-when">${esc(fmtWhen(run.begin))}</div><div class="run-what">${where}</div>
-        <div class="run-meta">${fmtDuration(run.duration)} · ${fmtArea(run.area)}${run.mopped ? ` · ${icon("drop", "i tiny")}mopped` : ""}</div></li>`;
+        <div class="run-meta">${fmtDuration(run.duration)} · ${fmtArea(run.area)}${run.mopped ? ` · ${icon("drop", "i tiny")}mopped` : ""}</div>
+        ${explainHtml(run.begin)}</li>`;
     })
     .join("");
 

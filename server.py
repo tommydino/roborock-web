@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any
 
 import uvicorn
+from ai import register_ai_routes
 from fastapi import Body, FastAPI, HTTPException, Request
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
@@ -86,6 +87,8 @@ def create_app(demo: bool) -> FastAPI:
             return await service.controller(duid)
         except KeyError:
             raise HTTPException(404, "Robot not found") from None
+
+    register_ai_routes(app, ctrl)
 
     @app.get("/api/auth")
     async def auth():
