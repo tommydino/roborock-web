@@ -115,6 +115,12 @@ A laundry basket, a bag, a chair pulled out: things that stand on the floor for 
 
 Rooms need 10 finished runs with a map before they can have suspects. Runs are compared only with runs that covered the room in a similar way, so a schedule that keeps off the walls isn't mistaken for clutter. Suspects are guesses from where the robot couldn't go, not things it saw.
 
+## AI assistant (optional)
+
+Press **⌘K** (Ctrl+K) or **Ask** above the map and type, or say, what you want: "vacuum the kitchen and hallway twice", "send it home", "what got missed this week?". Claude (Opus 5.5) turns it into a plan using only the app's own actions, highlights the rooms on the map, and waits: **nothing moves until you press Run**. Each run in Freshness → Recent runs also gets an **Explain** link.
+
+It's off until you add an Anthropic API key in **Settings → AI assistant** (saved in `data/anthropic.json`, readable only by you), or have `ANTHROPIC_API_KEY` set. When you use it, your request, room names and cleaning history are sent to Anthropic. Everything else works without it.
+
 ## Editing the map
 
 Click **Edit map** above the map. The robot needs to be docked or paused.
