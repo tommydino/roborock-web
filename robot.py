@@ -53,7 +53,6 @@ from roborock.roborock_typing import RoborockCommand
 from roborock.web_api import RoborockApiClient
 
 from history import (
-    history_cutoff,
     RECENT_RUNS,
     Grid,
     History,
@@ -61,6 +60,7 @@ from history import (
     estimate_model,
     freshness,
     grid_from_map,
+    history_cutoff,
     map_asset,
     route_from_map,
 )
