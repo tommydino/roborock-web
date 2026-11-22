@@ -50,6 +50,7 @@ MOP = [("standard", 300), ("deep", 301), ("deep_plus", 303), ("fast", 304), ("sm
 PRESETS = {
     "vacuum": (102, 200, 300),
     "vac_and_mop": (102, 202, 300),
+    "vac_then_mop": (102, 202, 300),
     "mop": (105, 202, 300),
     "custom": (106, 204, 302),
     "smart_mode": (110, 209, 306),
