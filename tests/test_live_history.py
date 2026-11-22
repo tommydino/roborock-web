@@ -11,6 +11,14 @@ from robot import DeviceController, S
 
 
 class LiveTimelineTest(unittest.IsolatedAsyncioTestCase):
+    def test_history_keeps_and_lists_runs_older_than_120_days(self):
+        history = History(None)
+        old = int(time.time()) - 365 * 86400
+        history.add(Run("old-run", old, old + 60, complete=True))
+        history.add(Run("new-run", int(time.time()) - 60, int(time.time()), complete=True))
+        self.assertEqual([run["id"] for run in history.list()], ["new-run", "old-run"])
+        history._observations.close()
+
     def test_versioned_backup_restores_runs_maps_and_observations(self):
         begin = int(time.time()) - 300
         source = History(None)
