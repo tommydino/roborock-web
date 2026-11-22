@@ -101,7 +101,7 @@ export function refreshMapOverlays(): void {
 
 function renderLabels(): void {
   const m = S.map;
-  if (!m) return;
+  if (!m || renaming) return; // keep the name box while someone types in it
   $("#map-labels").innerHTML = m.rooms
     .map((r) => {
       const sel = S.edit ? S.edit.mode === "rooms" && S.edit.rooms.includes(r.id) : S.tool === "rooms" && S.selected.includes(r.id);
@@ -123,12 +123,97 @@ function renderMarkers(): void {
   const rm = $("#robot-marker");
   rm.hidden = !m.robot;
   const body = rm.firstElementChild as HTMLElement | null;
-  if (m.robot && body) {
-    Object.assign(rm.style, { left: pct(m.robot.x, m.width), top: pct(m.robot.y, m.height) });
-    body.style.transform = `rotate(${90 - (m.robot.a || 0)}deg)`;
-    body.classList.toggle("busy", S.status?.phase === "cleaning");
-  }
+  if (body) body.classList.toggle("busy", S.status?.phase === "cleaning");
+  if (m.robot) glideRobot({ x: m.robot.x, y: m.robot.y, a: m.robot.a || 0 }, m.width, m.height);
 }
+
+// ---------- the robot glides from the pose it shows to the newest one ----------
+
+type Pose = { x: number; y: number; a: number };
+let shownPose: Pose | null = null;
+let poseFrame = 0;
+const GLIDE_MS = 1100;
+const reducedMotion = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+function placeRobot(p: Pose, w: number, h: number): void {
+  const rm = $("#robot-marker");
+  rm.style.left = pct(p.x, w);
+  rm.style.top = pct(p.y, h);
+  const body = rm.firstElementChild as HTMLElement | null;
+  if (body) body.style.transform = `rotate(${90 - p.a}deg)`;
+}
+
+function glideRobot(to: Pose, w: number, h: number): void {
+  cancelAnimationFrame(poseFrame);
+  const from = shownPose;
+  // Jump on the first fix, a far hop (new map) or when motion is reduced.
+  if (!from || reducedMotion() || Math.hypot(to.x - from.x, to.y - from.y) > Math.max(w, h) / 4) {
+    shownPose = to;
+    placeRobot(to, w, h);
+    return;
+  }
+  const turn = ((((to.a - from.a) % 360) + 540) % 360) - 180; // the short way round
+  const t0 = performance.now();
+  const step = (now: number) => {
+    const t = Math.min(1, (now - t0) / GLIDE_MS);
+    const e = 1 - Math.pow(1 - t, 3);
+    shownPose = { x: from.x + (to.x - from.x) * e, y: from.y + (to.y - from.y) * e, a: from.a + turn * e };
+    placeRobot(shownPose, w, h);
+    if (t < 1) poseFrame = requestAnimationFrame(step);
+  };
+  poseFrame = requestAnimationFrame(step);
+}
+
+// ---------- double-click a room name to rename it ----------
+
+let renaming = false;
+
+function startRename(label: HTMLElement): void {
+  const m = S.map;
+  const id = Number(label.dataset.room);
+  const room = m?.rooms.find((r) => r.id === id);
+  if (!m || !room || renaming) return;
+  renaming = true;
+  const box = document.createElement("input");
+  box.className = "room-rename";
+  box.value = room.name;
+  box.maxLength = 40;
+  box.setAttribute("aria-label", "Room name");
+  Object.assign(box.style, { left: label.style.left, top: label.style.top });
+  label.style.visibility = "hidden";
+  $("#map-labels").append(box);
+  for (const ev of ["click", "dblclick", "pointerdown", "mousedown", "wheel"]) box.addEventListener(ev, (e) => e.stopPropagation());
+  let done = false;
+  const finish = (save: boolean) => {
+    if (done) return;
+    done = true;
+    renaming = false;
+    const name = box.value.trim();
+    box.remove();
+    label.style.visibility = "";
+    if (save && name !== room.name) {
+      if (name) room.name = name;
+      void doAction("rename_room", { room: id, name }, { okMsg: name ? "Name saved" : "Back to the original name" });
+    }
+    renderLabels();
+  };
+  box.addEventListener("keydown", (e) => {
+    e.stopPropagation();
+    if (e.key === "Enter") finish(true);
+    else if (e.key === "Escape") finish(false);
+  });
+  box.addEventListener("blur", () => finish(false));
+  box.focus();
+  box.select();
+}
+
+inner.addEventListener("dblclick", (e) => {
+  if (!S.map || S.edit || S.tool !== "rooms" || (S.viewMode !== "2d" && S.viewMode !== "plan")) return;
+  const label = closest(e.target, "[data-room]");
+  if (!label) return;
+  e.preventDefault();
+  startRename(label);
+});
 
 /** Paint room highlights into the overlay canvas (also the 3D floor overlay). */
 export function drawSelection(): void {

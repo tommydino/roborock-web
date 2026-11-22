@@ -153,7 +153,7 @@ export function renderStatus(): void {
       <div class="battery" title="Battery ${b}%${charging ? ", charging" : ""}">
         <div class="ring ${ringCls}">
           <svg viewBox="0 0 66 66" aria-hidden="true"><circle class="track" cx="33" cy="33" r="27"/><circle class="fill" cx="33" cy="33" r="27" stroke-dasharray="${C}" stroke-dashoffset="${C * (1 - b / 100)}"/></svg>
-          <div class="ring-text"><span class="sr-only">Battery </span>${b}%</div>
+          <div class="ring-text"><i class="batt-glyph" aria-hidden="true" style="--lvl:${b}"></i><span><span class="sr-only">Battery </span>${b}%</span></div>
         </div>
         ${charging ? `<span class="bolt">${icon("bolt")}<span class="sr-only">Charging</span></span>` : ""}
       </div>

@@ -17,6 +17,13 @@ export { planImage };
 
 export function setViewMode(mode: ViewMode): void {
   if (mode === S.viewMode) return;
+  const doc = document as Document & { startViewTransition?: (cb: () => void) => unknown };
+  if (doc.startViewTransition && !matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    doc.startViewTransition(() => switchView(mode));
+  } else switchView(mode);
+}
+
+function switchView(mode: ViewMode): void {
   if (mode === "3d" && S.tool !== "rooms") setTool("rooms"); // zones and go-to need the flat map
   S.viewMode = mode;
   try {
