@@ -18,6 +18,7 @@ let historyRequest = 0;
 let fetchingHistoryMap = false;
 let selectedRunId: string | null = null;
 let selectedRun: RunDetail | null = null;
+let historyLoadError: string | null = null;
 let runHistoryLoading = true;
 let historyResultFilter: HistoryResultFilter = "all";
 let historyTypeFilter: HistoryTypeFilter = "all";
@@ -157,6 +158,8 @@ export function renderRunHistory(): void {
   const list = $opt<HTMLElement>("#history-runs-list");
   const detail = $opt<HTMLElement>("#history-run-detail");
   if (!list || !detail) return;
+  const backupLink = $opt<HTMLAnchorElement>("[data-history-export]");
+  if (backupLink) backupLink.href = devicePath("history-backup");
   list.hidden = selectedRunId !== null;
   detail.hidden = selectedRunId === null;
   const filters = { result: historyResultFilter, type: historyTypeFilter, sort: historySort };
@@ -167,6 +170,7 @@ export function renderRunHistory(): void {
     selectedRunId,
     selectedRun,
     fetchingHistoryMap,
+    loadError: historyLoadError,
     routeSpeed,
     routeProgress,
     appTimeline: app.text,
@@ -191,6 +195,7 @@ async function openHistoryRun(id: string): Promise<void> {
   routeTimer = null;
   selectedRunId = id;
   selectedRun = null;
+  historyLoadError = null;
   runHistoryLoading = true;
   routeProgress = 0;
   routeSpeed = 1;
@@ -215,8 +220,8 @@ async function openHistoryRun(id: string): Promise<void> {
     selectedRun = loaded;
   } catch (e) {
     if (current()) {
-      toast(`Couldn't load run details: ${errorMessage(e)}`, true);
-      if (!selectedRun) selectedRunId = null;
+      historyLoadError = `Couldn't load run details: ${errorMessage(e)}`;
+      toast(historyLoadError, true);
     }
   } finally {
     if (request === historyRequest) {
@@ -235,6 +240,35 @@ async function openHistoryRun(id: string): Promise<void> {
 const settingsRoot = $("#settings");
 settingsRoot.addEventListener("change", async (event) => {
   const input = event.target;
+  if (input instanceof HTMLInputElement && input.matches("[data-history-import]")) {
+    const file = input.files?.[0];
+    if (!file) return;
+    try {
+      if (file.size > 50_000_000) throw new Error("This history backup is too large.");
+      const backup: unknown = JSON.parse(await file.text());
+      if (!backup || typeof backup !== "object") throw new Error("This backup is not valid JSON.");
+      if (!confirm("Restore this backup? It will replace locally stored history for this robot.")) return;
+      await api(devicePath("history-backup"), { method: "POST", body: backup });
+      const browserTimelines = (backup as { browser_timelines?: unknown }).browser_timelines;
+      if (browserTimelines && typeof browserTimelines === "object") {
+        const prefix = `roborock:app-timeline:${S.duid}:`;
+        for (const [runId, timeline] of Object.entries(browserTimelines)) {
+          if (typeof timeline === "string") localStorage.setItem(prefix + runId, timeline);
+        }
+      }
+      selectedRunId = null;
+      selectedRun = null;
+      historyLoadError = null;
+      await loadRunHistory();
+      document.dispatchEvent(new CustomEvent("settings-refresh-request"));
+      toast("History backup restored");
+    } catch (error) {
+      toast(`Couldn't restore history: ${errorMessage(error)}`, true);
+    } finally {
+      input.value = "";
+    }
+    return;
+  }
   if (input instanceof HTMLSelectElement && input.matches("[data-history-result]")) {
     historyResultFilter = input.value as typeof historyResultFilter;
     renderRunHistory();
@@ -268,6 +302,29 @@ settingsRoot.addEventListener("change", async (event) => {
   }
 });
 settingsRoot.addEventListener("click", async (e) => {
+  const exportLink = closest<HTMLAnchorElement>(e.target, "[data-history-export]");
+  if (exportLink) {
+    e.preventDefault();
+    try {
+      const backup = await api<Record<string, unknown>>(devicePath("history-backup"));
+      const prefix = `roborock:app-timeline:${S.duid}:`;
+      const browserTimelines: Record<string, string> = {};
+      for (let index = 0; index < localStorage.length; index++) {
+        const key = localStorage.key(index);
+        if (key?.startsWith(prefix)) browserTimelines[key.slice(prefix.length)] = localStorage.getItem(key) ?? "";
+      }
+      backup.browser_timelines = browserTimelines;
+      const url = URL.createObjectURL(new Blob([JSON.stringify(backup)], { type: "application/json" }));
+      const download = document.createElement("a");
+      download.href = url;
+      download.download = `roborock-history-${S.duid}.json`;
+      download.click();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      toast(`Couldn't download history: ${errorMessage(error)}`, true);
+    }
+    return;
+  }
   if (closest(e.target, "[data-save-timeline]") && selectedRun) {
     const value = settingsRoot.querySelector<HTMLTextAreaElement>("[data-app-timeline]")?.value.trim() ?? "";
     if (value && value.split("\n").some((line) => !validTimelineLine(line))) {
@@ -297,7 +354,13 @@ settingsRoot.addEventListener("click", async (e) => {
     routeTimer = null;
     selectedRunId = null;
     selectedRun = null;
+    historyLoadError = null;
     renderRunHistory();
+    return;
+  }
+  const retry = closest<HTMLButtonElement>(e.target, "[data-run-retry]");
+  if (retry) {
+    await openHistoryRun(retry.dataset.runRetry ?? "");
     return;
   }
   const deleteButton = closest<HTMLButtonElement>(e.target, "[data-run-delete]");
