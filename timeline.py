@@ -132,6 +132,21 @@ def clean_settings(fields):
     }
 
 
+def cleaned_segments(events, *, mopped: bool = False) -> set[int]:
+    """Room ids the robot explicitly reports cleaning in a completed run timeline."""
+    segments = set()
+    for event in merged_events(events or []):
+        if number(event.get("i")) != 42:
+            continue
+        fields = event.get("e")
+        segment = attribute(fields, 2)
+        if segment is None or not 1 <= segment <= 31:
+            continue
+        if not mopped or clean_settings(fields)["mode"] != "Vacuum":
+            segments.add(segment)
+    return segments
+
+
 def timeline_rows(events, rooms):
     rows = []
     replenish = None

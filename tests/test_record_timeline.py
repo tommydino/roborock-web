@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock
 
 from history import History, Run
 from robot import DeviceController
-from timeline import read_timeline, timeline_rows
+from timeline import cleaned_segments, read_timeline, timeline_rows
 
 
 class RecordTimelineTest(unittest.TestCase):
@@ -63,6 +63,8 @@ class RecordTimelineTest(unittest.TestCase):
         self.assertEqual(rows[7]["clean"], {"mode": "Mop", "clean_mode": 105,
                          "water_mode": 202, "mop_mode": 301, "repeat_count": 1,
                          "mop_type": 2, "mop_power": 15})
+        self.assertEqual(cleaned_segments(first + second), {16})
+        self.assertEqual(cleaned_segments(first + second, mopped=True), {16})
         history = History(None)
         now = int(time.time())
         history.add(Run("summary", now - 1620, now, duration=900, complete=True,

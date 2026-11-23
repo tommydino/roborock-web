@@ -23,7 +23,7 @@ from typing import Any
 from PIL import Image, ImageChops, ImageDraw
 
 from maprender import SCALE, RenderedMap
-from timeline import timeline_rows
+from timeline import cleaned_segments, timeline_rows
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -478,10 +478,23 @@ def freshness(history: History, m: RenderedMap, flag: int | None, now: float | N
         room, total = room_masks[rid]
         return _count(ImageChops.logical_and(room, cover)) / total
 
+    covers = {r.id: (c, mp) for r, c, mp in laid}
+    explicit = {
+        r.id: (cleaned_segments(r.device_events), cleaned_segments(r.device_events, mopped=True))
+        for r in on_map if r.device_events and r.complete is not False
+    }
+
+    def room_done(run: Run, rid: int, mop: bool = False) -> bool:
+        reported = explicit.get(run.id, (set(), set()))[1 if mop else 0]
+        if rid in reported:
+            return True
+        cover = covers.get(run.id, (None, None))[1 if mop else 0]
+        return cover is not None and share(rid, cover) >= ROOM_DONE
+
     rooms = []
     for rid in room_masks:
-        last_clean = next((r.end for r, c, _ in reversed(laid) if share(rid, c) >= ROOM_DONE), None)
-        last_mop = next((r.end for r, _, mp in reversed(laid) if mp is not None and share(rid, mp) >= ROOM_DONE), None)
+        last_clean = next((r.end for r in reversed(on_map) if room_done(r, rid)), None)
+        last_mop = next((r.end for r in reversed(on_map) if room_done(r, rid, mop=True)), None)
         interval = history.interval(flag, rid)
         recent = clean_days.point(lambda d, k=interval: 255 if d <= k else 0).convert("1", dither=Image.Dither.NONE)
         due_from = last_clean if last_clean is not None else since
@@ -494,14 +507,13 @@ def freshness(history: History, m: RenderedMap, flag: int | None, now: float | N
             "overdue": now - due_from > interval * 86400,
         })
 
-    covers = {r.id: (c, mp) for r, c, mp in laid}
     runs = []
     for r in reversed(on_map[-RECENT_RUNS:]):
         c, mp = covers.get(r.id, (None, None))
         runs.append({
             "id": r.id, "begin": r.begin, "end": r.end, "duration": r.duration, "area": r.area, "complete": r.complete,
             "source": r.source, "mapped": c is not None, "mopped": mp is not None,
-            "rooms": [rid for rid in room_masks if c is not None and share(rid, c) >= ROOM_DONE],
+            "rooms": [rid for rid in room_masks if room_done(r, rid)],
         })
 
     buf = io.BytesIO()
