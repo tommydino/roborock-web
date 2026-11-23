@@ -180,6 +180,7 @@ class MapRenderer:
 
     def render(self, raw: bytes) -> RenderedMap | None:
         base = self._base.parse(raw)
+        _restore_modern_photo_ids(raw, base)
         if base.image is None or base.image.is_empty:
             return None
         dims = base.image.dimensions
@@ -214,6 +215,59 @@ class MapRenderer:
             left=dims.left,
             img_height=dims.height,
         )
+
+
+def _restore_modern_photo_ids(raw: bytes, map_data: MapData) -> None:
+    """Restore photo IDs from the 36-byte obstacle records used by newer Saros models.
+
+    vacuum-map-parser-roborock currently only reads IDs from records whose size is
+    exactly 28 bytes. The photo ID remains at bytes 12..27 in the newer records,
+    so read it without interpreting the additional model-specific fields.
+    """
+    if len(raw) < 4:
+        return
+    position = int.from_bytes(raw[2:4], "little")
+    if position < 4 or position > len(raw):
+        return
+
+    collections = {
+        15: map_data.obstacles_with_photo,
+        16: map_data.ignored_obstacles_with_photo,
+    }
+    while position + 8 <= len(raw):
+        header_size = int.from_bytes(raw[position + 2:position + 4], "little")
+        data_size = int.from_bytes(raw[position + 4:position + 8], "little")
+        if header_size < 8:
+            return
+        data_start = position + header_size
+        block_end = data_start + data_size
+        if block_end > len(raw):
+            return
+
+        block_type = int.from_bytes(raw[position:position + 2], "little")
+        obstacles = collections.get(block_type)
+        count = int.from_bytes(raw[position + 8:position + 10], "little") if header_size >= 10 else 0
+        if obstacles and count and data_size % count == 0:
+            record_size = data_size // count
+            if record_size >= 28:
+                ids_by_position: dict[tuple[int, int], str] = {}
+                for index in range(count):
+                    start = data_start + index * record_size
+                    x = int.from_bytes(raw[start:start + 2], "little")
+                    y = int.from_bytes(raw[start + 2:start + 4], "little")
+                    encoded = raw[start + 12:start + 28].split(b"\0", 1)[0]
+                    try:
+                        photo_id = encoded.decode("ascii")
+                    except UnicodeDecodeError:
+                        continue
+                    if photo_id and photo_id.isprintable():
+                        ids_by_position[(x, y)] = photo_id
+                for obstacle in obstacles:
+                    photo_id = ids_by_position.get((round(obstacle.x), round(obstacle.y)))
+                    if photo_id:
+                        obstacle.details.photo_name = photo_id
+
+        position = block_end
 
 
 def _png(img: Image.Image) -> bytes:
