@@ -671,7 +671,7 @@ svg.i.tiny { width: 12px; height: 12px; }
 .obstacle-photo-viewer { width: 100vw; max-width: none; height: 100dvh; max-height: none; margin: 0; padding: 24px; border: 0; background: transparent; overflow: hidden; }
 .obstacle-photo-viewer::backdrop { background: rgba(5, 9, 18, 0.9); backdrop-filter: blur(4px); }
 .obstacle-photo-viewer[open] { display: grid; place-items: center; }
-.obstacle-photo-viewer img { max-width: min(1100px, calc(100vw - 48px)); max-height: calc(100dvh - 48px); border-radius: 14px; object-fit: contain; box-shadow: 0 18px 60px rgba(0, 0, 0, 0.5); }
+.obstacle-photo-viewer img { width: min(1200px, calc(100vw - 24px)); height: calc(100dvh - 24px); border-radius: 14px; object-fit: contain; box-shadow: 0 18px 60px rgba(0, 0, 0, 0.5); }
 .obstacle-photo-close { position: fixed; z-index: 1; top: max(16px, env(safe-area-inset-top)); right: max(16px, env(safe-area-inset-right)); width: 44px; height: 44px; padding: 0; border: 1px solid rgba(255, 255, 255, 0.35); border-radius: 50%; background: rgba(15, 23, 42, 0.72); color: #fff; font-size: 32px; font-weight: 300; line-height: 38px; cursor: pointer; }
 .obstacle-photo-prev, .obstacle-photo-next { position: fixed; z-index: 1; top: 50%; transform: translateY(-50%); width: 48px; height: 64px; padding: 0; border: 1px solid rgba(255, 255, 255, 0.28); border-radius: 14px; background: rgba(15, 23, 42, 0.65); color: #fff; font-size: 46px; line-height: 52px; cursor: pointer; }
 .obstacle-photo-prev { left: max(12px, env(safe-area-inset-left)); }
