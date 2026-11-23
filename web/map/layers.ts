@@ -29,7 +29,7 @@ export interface ObstacleGroup {
   kind: ObstacleKind;
   count: number;
   title: string;
-  photoId?: string;
+  photoIds: string[];
 }
 
 /** Merge obstacles within half a metre into one marker, so a wall of bumps doesn't pile up. */
@@ -53,9 +53,9 @@ export function groupObstacles(obstacles: Obstacle[], scale: number): ObstacleGr
     title += kind === "obstacle"
       ? " – Roborock detected something here and steered around it, but did not provide a name"
       : " – detected and avoided by the robot";
-    const photoId = items.find((i) => i.photo_id)?.photo_id ?? undefined;
-    if (photoId) title += ". Tap to view the photo";
-    return { x: xs / items.length, y: ys / items.length, kind, count: items.length, title, photoId };
+    const photoIds = [...new Set(items.map((i) => i.photo_id).filter((id): id is string => Boolean(id)))];
+    if (photoIds.length) title += photoIds.length > 1 ? `. Tap to view ${photoIds.length} photos` : ". Tap to view the photo";
+    return { x: xs / items.length, y: ys / items.length, kind, count: items.length, title, photoIds };
   });
 }
 
@@ -83,10 +83,10 @@ export function renderThings(): void {
   for (const line of m.goto_path ?? []) svg += `<polyline class="goto-route" points="${points(line)}"/>`;
   infoSvg.innerHTML = svg;
 
-  const marker = (cls: string, x: number, y: number, title: string, ic: string, count = 1, photoId?: string) =>
-    `<span class="thing ${cls}" role="button" tabindex="0" data-map-info="${esc(title)}" ${photoId ? `data-photo-id="${esc(photoId)}"` : ""} aria-label="${esc(title)}" style="left:${pct(x, m.width)};top:${pct(y, m.height)}" title="${esc(title)}">${icon(ic)}${count > 1 ? `<b class="count">${count}</b>` : ""}</span>`;
+  const marker = (cls: string, x: number, y: number, title: string, ic: string, count = 1, photoIds: string[] = []) =>
+    `<span class="thing ${cls}" role="button" tabindex="0" data-map-info="${esc(title)}" ${photoIds.length ? `data-photo-ids="${esc(JSON.stringify(photoIds))}"` : ""} aria-label="${esc(title)}" style="left:${pct(x, m.width)};top:${pct(y, m.height)}" title="${esc(title)}">${icon(ic)}${count > 1 ? `<b class="count">${count}</b>` : ""}</span>`;
   thingsEl.innerHTML =
-    groupObstacles(m.obstacles ?? [], m.scale).map((g) => marker(g.kind, g.x, g.y, g.title, OBSTACLE_ICON[g.kind], g.count, g.photoId)).join("") +
+    groupObstacles(m.obstacles ?? [], m.scale).map((g) => marker(g.kind, g.x, g.y, g.title, OBSTACLE_ICON[g.kind], g.count, g.photoIds)).join("") +
     (m.goto ? marker("goto", m.goto[0], m.goto[1], "Where the robot is heading", "target") : "");
 
   carpetsImg.src = carpetImage() || "data:,";
@@ -176,7 +176,48 @@ objectInfo.className = "map-object-info";
 objectInfo.hidden = true;
 objectInfo.setAttribute("role", "status");
 stage.append(objectInfo);
+const photoViewer = document.createElement("dialog");
+photoViewer.className = "obstacle-photo-viewer";
+photoViewer.setAttribute("aria-label", "Obstacle photo");
+photoViewer.innerHTML = `<button class="obstacle-photo-close" type="button" aria-label="Close photo">&times;</button><button class="obstacle-photo-prev" type="button" aria-label="Previous photo">&#8249;</button><img alt=""><button class="obstacle-photo-next" type="button" aria-label="Next photo">&#8250;</button><div class="obstacle-photo-count"></div>`;
+document.body.append(photoViewer);
+const viewerImage = photoViewer.querySelector<HTMLImageElement>("img")!;
+const viewerCount = photoViewer.querySelector<HTMLElement>(".obstacle-photo-count")!;
+const previousPhoto = photoViewer.querySelector<HTMLButtonElement>(".obstacle-photo-prev")!;
+const nextPhoto = photoViewer.querySelector<HTMLButtonElement>(".obstacle-photo-next")!;
+let viewerSources: string[] = [];
+let viewerIndex = 0;
 let activeMarker: HTMLElement | null = null;
+
+function showViewerPhoto(index: number): void {
+  viewerIndex = (index + viewerSources.length) % viewerSources.length;
+  viewerImage.src = viewerSources[viewerIndex];
+  viewerImage.alt = `Photo of detected obstacle ${viewerIndex + 1} of ${viewerSources.length}`;
+  viewerCount.textContent = viewerSources.length > 1 ? `${viewerIndex + 1} / ${viewerSources.length}` : "";
+  previousPhoto.hidden = nextPhoto.hidden = viewerSources.length < 2;
+}
+
+function openPhoto(images: HTMLImageElement[], index: number): void {
+  viewerSources = images.map((image) => image.currentSrc || image.src);
+  if (!viewerSources.length) return;
+  showViewerPhoto(index);
+  photoViewer.showModal();
+}
+
+photoViewer.querySelector(".obstacle-photo-close")?.addEventListener("click", () => photoViewer.close());
+previousPhoto.addEventListener("click", () => showViewerPhoto(viewerIndex - 1));
+nextPhoto.addEventListener("click", () => showViewerPhoto(viewerIndex + 1));
+photoViewer.addEventListener("click", (e) => {
+  if (e.target === photoViewer) photoViewer.close();
+});
+photoViewer.addEventListener("keydown", (e) => {
+  if (e.key === "ArrowLeft" && viewerSources.length > 1) showViewerPhoto(viewerIndex - 1);
+  if (e.key === "ArrowRight" && viewerSources.length > 1) showViewerPhoto(viewerIndex + 1);
+});
+photoViewer.addEventListener("close", () => {
+  viewerImage.removeAttribute("src");
+  viewerSources = [];
+});
 
 function showObjectInfo(marker: HTMLElement): void {
   const text = marker.dataset.mapInfo;
@@ -186,14 +227,25 @@ function showObjectInfo(marker: HTMLElement): void {
     activeMarker = null;
     return;
   }
-  const photoId = marker.dataset.photoId;
-  objectInfo.innerHTML = `<div>${esc(text)}</div>${photoId ? `<img class="obstacle-photo" src="${devicePath("obstacle-photo")}?photo_id=${encodeURIComponent(photoId)}" alt="Photo of detected obstacle"><div class="obstacle-photo-error" hidden>Photo unavailable</div>` : ""}`;
-  const image = objectInfo.querySelector<HTMLImageElement>(".obstacle-photo");
-  image?.addEventListener("error", () => {
-    image.hidden = true;
-    const error = objectInfo.querySelector<HTMLElement>(".obstacle-photo-error");
-    if (error) error.hidden = false;
-  }, { once: true });
+  let photoIds: string[] = [];
+  try {
+    photoIds = JSON.parse(marker.dataset.photoIds ?? "[]");
+  } catch {
+    // Ignore malformed marker data.
+  }
+  const photos = photoIds.map((photoId, index) => `<img class="obstacle-photo" src="${devicePath("obstacle-photo")}?photo_id=${encodeURIComponent(photoId)}" alt="Photo of detected obstacle ${index + 1} of ${photoIds.length}">`).join("");
+  objectInfo.innerHTML = `<div>${esc(text)}</div>${photos ? `<div class="obstacle-photos">${photos}</div><div class="obstacle-photo-error" hidden>Photo unavailable</div>` : ""}`;
+  const images = $$<HTMLImageElement>(".obstacle-photo", objectInfo);
+  images.forEach((image, index) => {
+    image.addEventListener("error", () => {
+      image.hidden = true;
+      if (images.every((item) => item.hidden)) {
+        const error = objectInfo.querySelector<HTMLElement>(".obstacle-photo-error");
+        if (error) error.hidden = false;
+      }
+    }, { once: true });
+    image.addEventListener("click", () => openPhoto(images, index));
+  });
   activeMarker = marker;
   objectInfo.hidden = false;
   const target = marker.getBoundingClientRect();
