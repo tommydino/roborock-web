@@ -314,7 +314,10 @@ def _things(map_data: MapData) -> dict[str, Any]:
 
     obstacles = []
     seen: set[tuple[int, int]] = set()
-    for o in [*(map_data.obstacles or []), *(map_data.obstacles_with_photo or [])]:
+    # Roborock commonly exposes the same detection in both collections. Keep the
+    # photo-bearing copy when their coordinates overlap; otherwise the generic
+    # copy would consume the deduplication key and make the photo unreachable.
+    for o in [*(map_data.obstacles_with_photo or []), *(map_data.obstacles or [])]:
         q = px(o)
         key = (round(q[0]), round(q[1]))
         if key in seen:
