@@ -47,6 +47,7 @@ from roborock.devices.device_manager import DeviceManager, UserParams, create_de
 from roborock.devices.file_cache import FileCache
 from roborock.devices.traits.v1.common import merge_trait_values
 from roborock.devices.traits.v1.consumeable import ConsumableAttribute
+from roborock.devices.traits.v1.obstacle_photos import parse_photo_data
 from roborock.devices.transport.local_channel import LocalChannel
 from roborock.exceptions import RoborockException, RoborockRateLimit, RoborockTooFrequentCodeRequests
 from roborock.roborock_typing import RoborockCommand
@@ -66,10 +67,13 @@ from history import (
 )
 from history_rpc import map_diagnostics, probe_history_map, send_history_command
 from maprender import MapRenderer, RenderedMap
+from roborock_compat import install_multipart_blob_decoder
 from suspects import pin_name, suspects
 from timeline import read_timeline
 
 _LOGGER = logging.getLogger(__name__)
+
+install_multipart_blob_decoder()
 
 # After Roborock's broker turns a connection away, python-roborock waits up to six hours
 # before trying the cloud again. For an app in your home that's far too long to sit offline.
@@ -459,8 +463,15 @@ class DeviceController:
         photos = self._p.obstacle_photos
         if photos is None:
             raise RoborockException("Obstacle photos are not supported by this robot")
-        photo = await photos.get_photo(photo_id)
-        content = photo.image_content
+        try:
+            response = await photos.rpc_channel.send_command(
+                RoborockCommand.GET_PHOTO,
+                params={"img_id": photo_id, "type": 0},
+            )
+            content = parse_photo_data(response)
+        except Exception as err:  # noqa: BLE001 - older robots may only offer the thumbnail
+            _LOGGER.info("Full obstacle photo unavailable, using thumbnail: %s", err or type(err).__name__)
+            content = (await photos.get_photo(photo_id)).image_content
         media_type = "image/png" if content.startswith(b"\x89PNG\r\n\x1a\n") else "image/jpeg"
         return content, media_type
 
