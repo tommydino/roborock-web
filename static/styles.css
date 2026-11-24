@@ -670,7 +670,7 @@ svg.i.tiny { width: 12px; height: 12px; }
 .obstacle-title-row { display: flex; align-items: center; gap: 12px; }
 .obstacle-category-icon { display: grid; flex: 0 0 50px; width: 50px; height: 50px; place-items: center; border-radius: 50%; background: #bd3d16; color: #fff; }
 .obstacle-category-icon.type-cable { background: #2468b2; }
-.obstacle-category-icon.type-furniture { background: #b36a0b; }
+.obstacle-category-icon.type-furniture, .obstacle-category-icon.type-pedestal { background: #b36a0b; }
 .obstacle-category-glyph { width: 27px; height: 27px; stroke-width: 2.1; }
 .obstacle-heading-copy { min-width: 0; }
 .obstacle-info-title { color: #f6f7f8; font-size: 21px; font-weight: 700; text-align: left; }
