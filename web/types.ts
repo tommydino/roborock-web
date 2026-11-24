@@ -99,6 +99,8 @@ export type ObstacleKind = "cable" | "pet_waste" | "shoes" | "clothes" | "pet" |
 export interface Obstacle extends Point {
   kind: ObstacleKind;
   type?: number;
+  confidence?: number | null;
+  ignored?: boolean;
   label: string;
   photo: boolean;
   photo_id?: string | null;

@@ -2,7 +2,7 @@
 // where it mopped), carpets, obstacles the robot spotted, no-carpet zones, the
 // zone being cleaned and the go-to target. The Layers menu switches them on and off.
 
-import { devicePath } from "../api";
+import { api, devicePath } from "../api";
 import { $, $$, closest, cssVar, esc, icon, pct } from "../dom";
 import { S, type Layers } from "../state";
 import type { Obstacle, ObstacleKind, Polyline } from "../types";
@@ -30,6 +30,10 @@ export interface ObstacleGroup {
   count: number;
   title: string;
   photoIds: string[];
+  objectIds: number[];
+  confidence: number | null;
+  ignored: boolean;
+  label: string;
 }
 
 /** Merge obstacles within half a metre into one marker, so a wall of bumps doesn't pile up. */
@@ -55,7 +59,13 @@ export function groupObstacles(obstacles: Obstacle[], scale: number): ObstacleGr
       : " – detected and avoided by the robot";
     const photoIds = [...new Set(items.map((i) => i.photo_id).filter((id): id is string => Boolean(id)))];
     if (photoIds.length) title += photoIds.length > 1 ? `. Tap to view ${photoIds.length} photos` : ". Tap to view the photo";
-    return { x: xs / items.length, y: ys / items.length, kind, count: items.length, title, photoIds };
+    const confidenceValues = items.map((i) => i.confidence).filter((n): n is number => typeof n === "number" && Number.isFinite(n));
+    const objectIds = [...new Set(items.map((i) => i.type).filter((id): id is number => Number.isInteger(id)))];
+    return {
+      x: xs / items.length, y: ys / items.length, kind, count: items.length, title, photoIds,
+      objectIds, confidence: confidenceValues.length ? confidenceValues.reduce((a, b) => a + b, 0) / confidenceValues.length : null,
+      ignored: items.every((i) => i.ignored), label: [...new Set(items.map((i) => i.label))].join(", "),
+    };
   });
 }
 
@@ -83,10 +93,10 @@ export function renderThings(): void {
   for (const line of m.goto_path ?? []) svg += `<polyline class="goto-route" points="${points(line)}"/>`;
   infoSvg.innerHTML = svg;
 
-  const marker = (cls: string, x: number, y: number, title: string, ic: string, count = 1, photoIds: string[] = []) =>
-    `<span class="thing ${cls}" role="button" tabindex="0" data-map-info="${esc(title)}" ${photoIds.length ? `data-photo-ids="${esc(JSON.stringify(photoIds))}"` : ""} aria-label="${esc(title)}" style="left:${pct(x, m.width)};top:${pct(y, m.height)}" title="${esc(title)}">${icon(ic)}${count > 1 ? `<b class="count">${count}</b>` : ""}</span>`;
+  const marker = (cls: string, x: number, y: number, title: string, ic: string, count = 1, photoIds: string[] = [], detail?: { objectIds: number[]; confidence: number | null; ignored: boolean; label: string }) =>
+    `<span class="thing ${cls}" role="button" tabindex="0" data-map-info="${esc(title)}" ${photoIds.length ? `data-photo-ids="${esc(JSON.stringify(photoIds))}"` : ""} ${detail ? `data-obstacle-detail="${esc(JSON.stringify(detail))}"` : ""} aria-label="${esc(title)}" style="left:${pct(x, m.width)};top:${pct(y, m.height)}" title="${esc(title)}">${icon(ic)}${count > 1 ? `<b class="count">${count}</b>` : ""}</span>`;
   thingsEl.innerHTML =
-    groupObstacles(m.obstacles ?? [], m.scale).map((g) => marker(g.kind, g.x, g.y, g.title, OBSTACLE_ICON[g.kind], g.count, g.photoIds)).join("") +
+    groupObstacles(m.obstacles ?? [], m.scale).map((g) => marker(g.kind, g.x, g.y, g.title, OBSTACLE_ICON[g.kind], g.count, g.photoIds, g)).join("") +
     (m.goto ? marker("goto", m.goto[0], m.goto[1], "Where the robot is heading", "target") : "");
 
   carpetsImg.src = carpetImage() || "data:,";
@@ -233,8 +243,23 @@ function showObjectInfo(marker: HTMLElement): void {
   } catch {
     // Ignore malformed marker data.
   }
+  let detail: { objectIds?: number[]; confidence?: number | null; ignored?: boolean; label?: string } = {};
+  try {
+    detail = JSON.parse(marker.dataset.obstacleDetail ?? "{}");
+  } catch {
+    // Ignore malformed marker data.
+  }
   const photos = photoIds.map((photoId, index) => `<img class="obstacle-photo" src="${devicePath("obstacle-photo")}?photo_id=${encodeURIComponent(photoId)}" alt="Photo of detected obstacle ${index + 1} of ${photoIds.length}">`).join("");
-  objectInfo.innerHTML = `<div>${esc(text)}</div>${photos ? `<div class="obstacle-photos">${photos}</div><div class="obstacle-photo-error" hidden>Photo unavailable</div>` : ""}`;
+  const label = detail.label || "Detected object";
+  const confidence = typeof detail.confidence === "number" && Number.isFinite(detail.confidence)
+    ? `Confidence: ${Math.round(Math.max(0, Math.min(100, detail.confidence)))}%`
+    : "";
+  const chips = [photoIds.length ? "AI" : "Detected", detail.ignored ? "Ignored" : "Avoided", confidence].filter(Boolean);
+  const explanation = label.toLowerCase() === "cords/wires"
+    ? "Cords/wires avoided, preventing tangling. Long, thin cords may still be tangled."
+    : `${label} detected${detail.ignored ? " and ignored" : " and avoided"} by the robot.`;
+  const canIgnore = photoIds.length > 0 && (detail.objectIds?.length ?? 0) > 0 && !detail.ignored;
+  objectInfo.innerHTML = `<div class="obstacle-info-title">${esc(label)}</div><div class="obstacle-info-badges">${chips.map((chip) => `<span>${esc(chip)}</span>`).join("")}</div><div class="obstacle-info-description">${esc(explanation)}</div>${photos ? `<div class="obstacle-photos">${photos}</div><div class="obstacle-photo-error" hidden>Photo unavailable</div>` : ""}${canIgnore ? `<button class="obstacle-ignore" type="button">No need to avoid, ignore?</button><div class="obstacle-ignore-status" aria-live="polite"></div>` : ""}`;
   const images = $$<HTMLImageElement>(".obstacle-photo", objectInfo);
   images.forEach((image, index) => {
     image.addEventListener("error", () => {
@@ -245,6 +270,25 @@ function showObjectInfo(marker: HTMLElement): void {
       }
     }, { once: true });
     image.addEventListener("click", () => openPhoto(images, index));
+  });
+  const ignoreButton = objectInfo.querySelector<HTMLButtonElement>(".obstacle-ignore");
+  ignoreButton?.addEventListener("click", async (event) => {
+    event.stopPropagation();
+    if (!ignoreButton || !detail.objectIds?.length) return;
+    ignoreButton.disabled = true;
+    ignoreButton.textContent = "Updating…";
+    const status = objectInfo.querySelector<HTMLElement>(".obstacle-ignore-status");
+    try {
+      await api(devicePath("obstacle-ignore"), { method: "POST", body: { photo_ids: photoIds } });
+      ignoreButton.remove();
+      const statusBadge = objectInfo.querySelector<HTMLElement>(".obstacle-info-badges span:nth-child(2)");
+      if (statusBadge) statusBadge.textContent = "Ignored";
+      if (status) status.textContent = "Roborock has been asked to ignore this object.";
+    } catch (error) {
+      ignoreButton.disabled = false;
+      ignoreButton.textContent = "No need to avoid, ignore?";
+      if (status) status.textContent = error instanceof Error ? error.message : "Could not update the obstacle.";
+    }
   });
   activeMarker = marker;
   objectInfo.hidden = false;

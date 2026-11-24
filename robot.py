@@ -475,6 +475,26 @@ class DeviceController:
         media_type = "image/png" if content.startswith(b"\x89PNG\r\n\x1a\n") else "image/jpeg"
         return content, media_type
 
+    async def ignore_obstacle(self, photo_ids: list[str]) -> dict[str, Any]:
+        """Tell Roborock to stop avoiding detected obstacle types selected from this live map."""
+        if not isinstance(photo_ids, list) or not photo_ids or len(photo_ids) > 20 or any(not isinstance(photo_id, str) for photo_id in photo_ids):
+            raise ValueError("Select an obstacle from the current map")
+        if self._map is None:
+            await self.map()
+        obstacles = (self._map.things.get("obstacles") if self._map else None) or []
+        by_photo_id = {item.get("photo_id"): item for item in obstacles if item.get("photo_id")}
+        selected = [by_photo_id.get(photo_id) for photo_id in photo_ids]
+        if any(item is None for item in selected):
+            raise ValueError("This obstacle is no longer on the current map. Refresh the map and try again.")
+        object_ids = sorted({
+            item["type"] for item in selected
+            if item is not None and type(item.get("type")) is int and not item.get("ignored")
+        })
+        if not object_ids:
+            raise ValueError("Roborock did not provide an object ID for this obstacle")
+        await self._p.command.send("app_ignore_dirty_objects", {"object_ids": object_ids})
+        return {"ok": True}
+
     def _refresh_soon(self) -> None:
         """Fetch a fresh map in the background; the caller serves the one it has."""
         if self._map_task is None or self._map_task.done():
