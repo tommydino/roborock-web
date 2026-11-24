@@ -207,6 +207,13 @@ def create_app(demo: bool, data_dir: Path | None = None) -> FastAPI:
             raise HTTPException(404, str(err)) from err
         return Response(content, media_type=media_type, headers={"Cache-Control": "private, max-age=300"})
 
+    @app.post("/api/devices/{duid}/obstacle-ignore")
+    async def obstacle_ignore(duid: str, body: dict[str, Any] = Body(...)):
+        try:
+            return await (await ctrl(duid)).ignore_obstacle(body.get("photo_ids", []))
+        except ValueError as err:
+            raise HTTPException(400, str(err)) from err
+
     @app.get("/api/devices/{duid}/settings")
     async def settings(duid: str):
         return await (await ctrl(duid)).settings()

@@ -664,10 +664,17 @@ svg.i.tiny { width: 12px; height: 12px; }
 .map-object-info { position: absolute; z-index: 10; transform: translate(-50%, -100%); max-width: min(280px, calc(100% - 24px)); padding: 9px 12px; border-radius: 10px; background: var(--text); color: var(--card); box-shadow: var(--shadow-lift); font-size: 12px; font-weight: 650; line-height: 1.35; text-align: center; pointer-events: auto; }
 .map-object-info::after { content: ""; position: absolute; top: 100%; left: 50%; margin-left: -6px; border: 6px solid transparent; border-top-color: var(--text); }
 .map-object-info[hidden] { display: none; }
+.obstacle-info-title { font-size: 14px; font-weight: 750; text-align: left; }
+.obstacle-info-badges { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-top: 4px; color: var(--muted); font-size: 11px; font-weight: 500; text-align: left; }
+.obstacle-info-badges span:not(:last-child) { padding: 1px 4px; border-radius: 4px; background: color-mix(in srgb, var(--card) 20%, transparent); }
+.obstacle-info-description { margin-top: 5px; color: var(--muted); font-weight: 500; text-align: left; }
 .obstacle-photos { display: flex; max-width: min(240px, 70vw); gap: 6px; margin-top: 8px; overflow-x: auto; scroll-snap-type: x mandatory; }
 .map-object-info .obstacle-photo { display: block; width: min(240px, 70vw); min-width: 112px; max-height: 220px; border-radius: 8px; object-fit: contain; background: #111; cursor: zoom-in; scroll-snap-align: center; }
 .map-object-info .obstacle-photo:only-child { min-width: min(240px, 70vw); }
 .obstacle-photo-error { margin-top: 6px; color: var(--muted); font-weight: 500; }
+.obstacle-ignore { display: block; margin: 9px auto 0; padding: 3px 0; border: 0; background: transparent; color: var(--accent, #1688ee); font: inherit; font-weight: 600; cursor: pointer; }
+.obstacle-ignore:disabled { opacity: .65; cursor: wait; }
+.obstacle-ignore-status { margin-top: 4px; color: var(--muted); font-size: 11px; font-weight: 500; }
 .obstacle-photo-viewer { width: 100vw; max-width: none; height: 100dvh; max-height: none; margin: 0; padding: 24px; border: 0; background: transparent; overflow: hidden; }
 .obstacle-photo-viewer::backdrop { background: rgba(5, 9, 18, 0.9); backdrop-filter: blur(4px); }
 .obstacle-photo-viewer[open] { display: grid; place-items: center; }

@@ -318,6 +318,8 @@ def _stamp_carpets(mask: Image.Image, carpet: set[int] | None) -> None:
 # What the parser calls an obstacle -> (icon kind, label).
 OBSTACLE_KINDS = {
     "cable": ("cable", "Cable"),
+    "cords/wires": ("cable", "Cords/wires"),
+    "cords and wires": ("cable", "Cords/wires"),
     "extension cord": ("cable", "Extension cord"),
     "pet waste": ("pet_waste", "Pet waste"),
     "poop": ("pet_waste", "Pet waste"),
@@ -371,7 +373,9 @@ def _things(map_data: MapData) -> dict[str, Any]:
     # Roborock commonly exposes the same detection in both collections. Keep the
     # photo-bearing copy when their coordinates overlap; otherwise the generic
     # copy would consume the deduplication key and make the photo unreachable.
-    for o in [*(map_data.obstacles_with_photo or []), *(map_data.obstacles or [])]:
+    ignored = [*(map_data.ignored_obstacles_with_photo or []), *(map_data.ignored_obstacles or [])]
+    ignored_positions = {(round(o.x), round(o.y)) for o in ignored}
+    for o in [*(map_data.obstacles_with_photo or []), *(map_data.obstacles or []), *ignored]:
         q = px(o)
         key = (round(q[0]), round(q[1]))
         if key in seen:
@@ -379,9 +383,12 @@ def _things(map_data: MapData) -> dict[str, Any]:
         seen.add(key)
         obstacle_type = o.details.type if type(o.details.type) is int else None
         kind, label = obstacle_kind(o.details.description, obstacle_type)
+        confidence = getattr(o.details, "confidence_level", None)
         obstacles.append({
             "x": q[0], "y": q[1], "kind": kind, "label": label,
             "type": obstacle_type,
+            "confidence": confidence if type(confidence) in (int, float) else None,
+            "ignored": key in ignored_positions,
             "photo": bool(o.details.photo_name),
             "photo_id": o.details.photo_name or None,
         })
