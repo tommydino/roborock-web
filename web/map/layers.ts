@@ -14,12 +14,12 @@ const thingsEl = $("#map-things");
 const carpetsImg = $<HTMLImageElement>("#map-carpets");
 
 export const OBSTACLE_ICON: Record<ObstacleKind, string> = {
-  cable: "plug",
+  cable: "cords-wires",
   pet_waste: "paw",
   shoes: "shoe",
   clothes: "shirt",
   pet: "paw",
-  furniture: "box",
+  furniture: "furniture",
   obstacle: "dot", // something it steered around, type unknown
 };
 
