@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import json
 import logging
 import os
 import shutil
@@ -202,10 +203,13 @@ def create_app(demo: bool, data_dir: Path | None = None) -> FastAPI:
     @app.get("/api/devices/{duid}/obstacle-photo")
     async def obstacle_photo(duid: str, photo_id: str):
         try:
-            content, media_type = await (await ctrl(duid)).obstacle_photo(photo_id)
+            content, media_type, bbox = await (await ctrl(duid)).obstacle_photo(photo_id)
         except ValueError as err:
             raise HTTPException(404, str(err)) from err
-        return Response(content, media_type=media_type, headers={"Cache-Control": "private, max-age=300"})
+        headers = {"Cache-Control": "private, max-age=300"}
+        if bbox:
+            headers["X-Obstacle-BBox"] = json.dumps(bbox, separators=(",", ":"))
+        return Response(content, media_type=media_type, headers=headers)
 
     @app.post("/api/devices/{duid}/obstacle-ignore")
     async def obstacle_ignore(duid: str, body: dict[str, Any] = Body(...)):
