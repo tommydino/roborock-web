@@ -576,19 +576,28 @@ class DeviceController:
                 params={"img_id": photo_id, "type": 0},
             )
             content, bbox = parse_obstacle_photo_response(response)
-            if bbox and not photo_matches_box(content, bbox):
+            if not bbox or not photo_matches_box(content, bbox):
                 # Some Saros photos return a square detail crop for type 0 while
                 # the rectangle is expressed in the full 4:3 camera frame.
-                # Type 1 is the uncropped image on those devices.
+                # Type 1 is the uncropped image on those devices and can also
+                # carry a rectangle missing from the cropped variant.
                 try:
-                    full = (await photos.get_photo(photo_id)).image_content
+                    full_response = await photos.rpc_channel.send_command(
+                        RoborockCommand.GET_PHOTO,
+                        params={"img_id": photo_id, "type": 1},
+                    )
+                    full, full_bbox = parse_obstacle_photo_response(full_response)
                 except Exception as err:  # noqa: BLE001 - keep the crop if the full photo is unavailable
                     _LOGGER.info("Uncropped obstacle photo unavailable: %s", err or type(err).__name__)
                     bbox = None
                 else:
-                    if photo_matches_box(full, bbox):
+                    bbox = full_bbox or bbox
+                    original_size = photo_dimensions(content)
+                    full_size = photo_dimensions(full)
+                    if (full_size and original_size and
+                            full_size[0] * original_size[1] > original_size[0] * full_size[1]):
                         content = full
-                    else:
+                    if bbox and not photo_matches_box(content, bbox):
                         bbox = None
         except Exception as err:  # noqa: BLE001 - older robots may only offer the thumbnail
             _LOGGER.info("Full obstacle photo unavailable, using thumbnail: %s", err or type(err).__name__)
