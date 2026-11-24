@@ -25,6 +25,7 @@ class MapObstacleLabelsTest(unittest.TestCase):
     def test_photo_copy_wins_when_obstacle_is_reported_twice(self):
         def obstacle(photo_name=None):
             return SimpleNamespace(
+                x=1234, y=5678,
                 details=SimpleNamespace(type=62, description="Shoes", photo_name=photo_name),
                 to_img=lambda _dimensions: SimpleNamespace(x=10, y=20),
             )
@@ -46,6 +47,7 @@ class MapObstacleLabelsTest(unittest.TestCase):
         self.assertEqual(len(result["obstacles"]), 1)
         self.assertTrue(result["obstacles"][0]["photo"])
         self.assertEqual(result["obstacles"][0]["photo_id"], "photo-123")
+        self.assertEqual((result["obstacles"][0]["origin_x"], result["obstacles"][0]["origin_y"]), (1234, 5678))
 
     def test_saros_36_byte_obstacle_record_restores_photo_id(self):
         photo_id = b"002OP8DjMLKGBRnX"
