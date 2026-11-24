@@ -1,7 +1,7 @@
 import gzip
 import unittest
 
-from robot import parse_obstacle_photo_response
+from robot import parse_obstacle_photo_response, photo_dimensions, photo_matches_box
 
 IMAGE = b"\xff\xd8\xff\xd9"
 
@@ -24,6 +24,17 @@ def detection_header():
 
 
 class ObstaclePhotoBoxTest(unittest.TestCase):
+    def test_cropped_variant_does_not_match_full_frame_box(self):
+        def jpeg(width, height):
+            return (b"\xff\xd8\xff\xc0\x00\x0b\x08"
+                    + height.to_bytes(2, "big") + width.to_bytes(2, "big")
+                    + b"\x01\x01\x11\x00\xff\xd9")
+
+        box = {"imageWidth": 640, "imageHeight": 480, "x": 23, "y": 222, "w": 260, "h": 91}
+        self.assertEqual(photo_dimensions(jpeg(320, 320)), (320, 320))
+        self.assertFalse(photo_matches_box(jpeg(320, 320), box))
+        self.assertTrue(photo_matches_box(jpeg(640, 480), box))
+
     def test_metadata_after_image(self):
         payload = block(3, IMAGE) + block(4, header=detection_header())
         photo, box = parse_obstacle_photo_response(payload)
