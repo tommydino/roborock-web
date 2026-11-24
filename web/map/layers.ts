@@ -26,6 +26,7 @@ export const OBSTACLE_ICON: Record<ObstacleKind, string> = {
 function obstacleIcon(kind: ObstacleKind, label: string): string {
   if (/^pedestal$/i.test(label.trim())) return "pedestal";
   if (/^(cable|cords\/wires|cords and wires|extension cord)$/i.test(label.trim())) return "cords-wires";
+  if (/^(furniture|easily trapped furniture)$/i.test(label.trim())) return "furniture";
   return OBSTACLE_ICON[kind];
 }
 
@@ -294,21 +295,26 @@ function showObjectInfo(marker: HTMLElement): void {
   const photos = photoIds.map((photoId, index) => `<img class="obstacle-photo" src="${devicePath("obstacle-photo")}?photo_id=${encodeURIComponent(photoId)}" alt="Photo of detected obstacle ${index + 1} of ${photoIds.length}">`).join("");
   const obstacleKind = (Object.keys(OBSTACLE_ICON) as ObstacleKind[]).find((kind) => marker.classList.contains(kind)) ?? "obstacle";
   const rawLabel = (detail.label || "Detected object").trim();
-  const label = /^pedestal$/i.test(rawLabel) ? "Pedestal" : obstacleKind === "obstacle" ? "Obstacle" : /^(cable|cords\/wires|cords and wires|extension cord)$/i.test(rawLabel) ? "Cords/wires" : rawLabel;
+  const isPedestal = /^pedestal$/i.test(rawLabel);
+  const isFurniture = /^(furniture|easily trapped furniture)$/i.test(rawLabel) || obstacleKind === "furniture";
+  const isCable = /^(cable|cords\/wires|cords and wires|extension cord)$/i.test(rawLabel) || obstacleKind === "cable";
+  const label = isPedestal ? "Pedestal" : obstacleKind === "obstacle" ? "Obstacle" : isFurniture ? "Easily trapped furniture" : isCable ? "Cords/wires" : rawLabel;
   const categoryIcon = obstacleIcon(obstacleKind, label);
-  const categoryKind = label === "Pedestal" ? "pedestal" : categoryIcon === "cords-wires" ? "cable" : obstacleKind;
+  const categoryKind = isPedestal ? "pedestal" : categoryIcon === "cords-wires" ? "cable" : categoryIcon === "furniture" ? "furniture" : obstacleKind;
   const confidence = typeof detail.confidence === "number" && Number.isFinite(detail.confidence)
     ? `Confidence:${Math.round(Math.max(0, Math.min(100, detail.confidence)))}%`
     : "";
   const isAi = (detail.objectIds?.length ?? 0) > 0 || Boolean(confidence);
   const state = detail.ignored ? "Ignored" : "Avoided";
-  const explanation = label === "Pedestal"
+  const explanation = isPedestal
     ? "Pedestal avoided preventing entrapment."
     : obstacleKind === "obstacle"
       ? "Potential ground obstacles detected by the LiDAR sensor and avoided in advance."
-      : label === "Cords/wires"
-        ? "Cords/wires avoided, preventing tangling. Long, thin cords may still be tangled."
-        : "";
+      : isFurniture
+        ? "Furniture with a crossbar, i.e., cantilever chair, avoided preventing entrapment."
+        : isCable
+          ? "Cords/wires avoided, preventing tangling. Long, thin cords may still be tangled."
+          : "";
   const canIgnore = photoIds.length > 0 && (detail.objectIds?.length ?? 0) > 0 && !detail.ignored;
   objectInfo.innerHTML = `<div class="obstacle-sheet-handle" aria-hidden="true"><span></span></div><div class="obstacle-sheet-body"><div class="obstacle-title-row"><div class="obstacle-category-icon type-${categoryKind}" aria-hidden="true">${icon(categoryIcon, "obstacle-category-glyph")}</div><div class="obstacle-heading-copy"><div class="obstacle-info-title">${esc(label)}</div><div class="obstacle-info-badges">${isAi ? '<span class="obstacle-ai-pill">AI</span>' : ""}<span class="obstacle-state">${esc(state)}</span>${confidence ? `<span class="obstacle-confidence">${esc(confidence)}</span>` : ""}</div></div></div>${explanation ? `<div class="obstacle-info-description">${esc(explanation)}</div>` : ""}${photos ? `<div class="obstacle-photos">${photos}</div><div class="obstacle-photo-error" hidden>Photo unavailable</div>` : ""}${canIgnore ? '<button class="obstacle-ignore" type="button">No need to avoid, ignore?</button><div class="obstacle-ignore-status" aria-live="polite"></div>' : ""}</div>`;
   const images = $$<HTMLImageElement>(".obstacle-photo", objectInfo);
