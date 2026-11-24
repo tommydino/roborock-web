@@ -36,21 +36,23 @@ export interface ObstacleGroup {
   label: string;
 }
 
-/** Merge obstacles within half a metre into one marker, so a wall of bumps doesn't pile up. */
+/** Merge nearby detections only when they represent the same object type. */
 export function groupObstacles(obstacles: Obstacle[], scale: number): ObstacleGroup[] {
   const radius = (0.5 / 0.05) * scale;
-  const groups: { xs: number; ys: number; items: Obstacle[] }[] = [];
+  const groups: { xs: number; ys: number; key: string; items: Obstacle[] }[] = [];
   for (const o of obstacles) {
-    const g = groups.find((g) => Math.hypot(g.xs / g.items.length - o.x, g.ys / g.items.length - o.y) <= radius);
+    const labelKey = o.label.trim().toLocaleLowerCase();
+    const typeKey = Number.isInteger(o.type) ? String(o.type) : labelKey;
+    const key = `${o.kind}:${typeKey}`;
+    const g = groups.find((g) => g.key === key && Math.hypot(g.xs / g.items.length - o.x, g.ys / g.items.length - o.y) <= radius);
     if (g) {
       g.items.push(o);
       g.xs += o.x;
       g.ys += o.y;
-    } else groups.push({ xs: o.x, ys: o.y, items: [o] });
+    } else groups.push({ xs: o.x, ys: o.y, key, items: [o] });
   }
   return groups.map(({ xs, ys, items }) => {
-    // Show a recognised type (a cable, shoes…) when the group has one.
-    const kind = (items.find((i) => i.kind !== "obstacle") ?? items[0]).kind;
+    const kind = items[0].kind;
     const counts = new Map<string, number>();
     for (const i of items) counts.set(i.label, (counts.get(i.label) ?? 0) + 1);
     let title = [...counts].map(([label, n]) => (n > 1 ? `${label} ×${n}` : label)).join(", ");
