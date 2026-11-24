@@ -136,6 +136,27 @@ def parse_obstacle_photo_response(response: bytes) -> tuple[bytes, dict[str, int
     return parse_photo_data(response), None
 
 
+def photo_payload_diagnostic(response: bytes) -> str:
+    """Bounded block-header summary for local troubleshooting; never includes image bytes."""
+    if response.startswith(b"\x1f\x8b"):
+        try:
+            response = gzip.decompress(response)
+        except (OSError, EOFError):
+            return "gzip-invalid"
+    parts = []
+    offset = 0
+    while offset + 8 <= len(response) and len(parts) < 8:
+        kind = int.from_bytes(response[offset:offset + 2], "little")
+        header_size = int.from_bytes(response[offset + 2:offset + 4], "little")
+        payload_size = int.from_bytes(response[offset + 4:offset + 8], "little")
+        if header_size < 8 or offset + header_size + payload_size > len(response):
+            break
+        header = response[offset + 8:offset + min(header_size, 64)]
+        parts.append(f"{kind}:{header_size}:{payload_size}:{header.hex()}")
+        offset += header_size + payload_size
+    return ";".join(parts) if parts else "no-typed-blocks"
+
+
 # After Roborock's broker turns a connection away, python-roborock waits up to six hours
 # before trying the cloud again. For an app in your home that's far too long to sit offline.
 _mqtt_session.MAX_BACKOFF_INTERVAL = timedelta(minutes=10)
@@ -511,7 +532,7 @@ class DeviceController:
         payload["stale"] = self._map_from_disk  # the browser asks again soon for the fresh one
         return payload
 
-    async def obstacle_photo(self, photo_id: str) -> tuple[bytes, str, dict[str, int] | None]:
+    async def obstacle_photo(self, photo_id: str) -> tuple[bytes, str, dict[str, int] | None, str]:
         """Fetch a photo that is explicitly referenced by the current map."""
         m = await self._history_map()
         valid_ids = {
@@ -530,12 +551,14 @@ class DeviceController:
                 params={"img_id": photo_id, "type": 0},
             )
             content, bbox = parse_obstacle_photo_response(response)
+            diagnostic = photo_payload_diagnostic(response)
         except Exception as err:  # noqa: BLE001 - older robots may only offer the thumbnail
             _LOGGER.info("Full obstacle photo unavailable, using thumbnail: %s", err or type(err).__name__)
             content = (await photos.get_photo(photo_id)).image_content
             bbox = None
+            diagnostic = f"thumbnail-fallback:{type(err).__name__}"
         media_type = "image/png" if content.startswith(b"\x89PNG\r\n\x1a\n") else "image/jpeg"
-        return content, media_type, bbox
+        return content, media_type, bbox, diagnostic
 
     async def ignore_obstacle(self, photo_ids: list[str]) -> dict[str, Any]:
         """Tell Roborock to stop avoiding detected obstacle types selected from this live map."""

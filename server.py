@@ -203,10 +203,10 @@ def create_app(demo: bool, data_dir: Path | None = None) -> FastAPI:
     @app.get("/api/devices/{duid}/obstacle-photo")
     async def obstacle_photo(duid: str, photo_id: str):
         try:
-            content, media_type, bbox = await (await ctrl(duid)).obstacle_photo(photo_id)
+            content, media_type, bbox, diagnostic = await (await ctrl(duid)).obstacle_photo(photo_id)
         except ValueError as err:
             raise HTTPException(404, str(err)) from err
-        headers = {"Cache-Control": "private, max-age=300"}
+        headers = {"Cache-Control": "private, max-age=300", "X-Obstacle-Photo-Diagnostic": diagnostic}
         if bbox:
             headers["X-Obstacle-BBox"] = json.dumps(bbox, separators=(",", ":"))
         return Response(content, media_type=media_type, headers=headers)
