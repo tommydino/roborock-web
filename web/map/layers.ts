@@ -6,7 +6,7 @@ import { api, devicePath } from "../api";
 import { $, $$, closest, cssVar, esc, icon, pct } from "../dom";
 import { S, type Layers } from "../state";
 import type { Obstacle, ObstacleKind, Polyline } from "../types";
-import { inner, mapImg, stage } from "./elements";
+import { inner, mapImg } from "./elements";
 import { planImage, sync3D } from "./views";
 
 const infoSvg = $<SVGSVGElement>("#map-info");
@@ -185,7 +185,7 @@ const objectInfo = document.createElement("div");
 objectInfo.className = "map-object-info";
 objectInfo.hidden = true;
 objectInfo.setAttribute("role", "status");
-stage.append(objectInfo);
+document.body.append(objectInfo);
 const photoViewer = document.createElement("dialog");
 photoViewer.className = "obstacle-photo-viewer";
 photoViewer.setAttribute("aria-label", "Obstacle photo");
@@ -250,16 +250,18 @@ function showObjectInfo(marker: HTMLElement): void {
     // Ignore malformed marker data.
   }
   const photos = photoIds.map((photoId, index) => `<img class="obstacle-photo" src="${devicePath("obstacle-photo")}?photo_id=${encodeURIComponent(photoId)}" alt="Photo of detected obstacle ${index + 1} of ${photoIds.length}">`).join("");
-  const label = detail.label || "Detected object";
+  const rawLabel = (detail.label || "Detected object").trim();
+  const label = /^(cable|cords\/wires|cords and wires|extension cord)$/i.test(rawLabel) ? "Cords/wires" : rawLabel;
   const confidence = typeof detail.confidence === "number" && Number.isFinite(detail.confidence)
-    ? `Confidence: ${Math.round(Math.max(0, Math.min(100, detail.confidence)))}%`
+    ? `Confidence:${Math.round(Math.max(0, Math.min(100, detail.confidence)))}%`
     : "";
-  const chips = [photoIds.length ? "AI" : "Detected", detail.ignored ? "Ignored" : "Avoided", confidence].filter(Boolean);
-  const explanation = label.toLowerCase() === "cords/wires"
+  const isAi = (detail.objectIds?.length ?? 0) > 0 || Boolean(confidence);
+  const state = detail.ignored ? "Ignored" : "Avoided";
+  const explanation = label === "Cords/wires"
     ? "Cords/wires avoided, preventing tangling. Long, thin cords may still be tangled."
-    : `${label} detected${detail.ignored ? " and ignored" : " and avoided"} by the robot.`;
+    : "";
   const canIgnore = photoIds.length > 0 && (detail.objectIds?.length ?? 0) > 0 && !detail.ignored;
-  objectInfo.innerHTML = `<div class="obstacle-info-title">${esc(label)}</div><div class="obstacle-info-badges">${chips.map((chip) => `<span>${esc(chip)}</span>`).join("")}</div><div class="obstacle-info-description">${esc(explanation)}</div>${photos ? `<div class="obstacle-photos">${photos}</div><div class="obstacle-photo-error" hidden>Photo unavailable</div>` : ""}${canIgnore ? `<button class="obstacle-ignore" type="button">No need to avoid, ignore?</button><div class="obstacle-ignore-status" aria-live="polite"></div>` : ""}`;
+  objectInfo.innerHTML = `<div class="obstacle-sheet-handle" aria-hidden="true"><span></span></div><div class="obstacle-sheet-body"><div class="obstacle-title-row"><div class="obstacle-ai-logo" aria-hidden="true">∞</div><div class="obstacle-heading-copy"><div class="obstacle-info-title">${esc(label)}</div><div class="obstacle-info-badges">${isAi ? '<span class="obstacle-ai-pill">AI</span>' : ""}<span class="obstacle-state">${esc(state)}</span>${confidence ? `<span class="obstacle-confidence">${esc(confidence)}</span>` : ""}</div></div></div>${explanation ? `<div class="obstacle-info-description">${esc(explanation)}</div>` : ""}${photos ? `<div class="obstacle-photos">${photos}</div><div class="obstacle-photo-error" hidden>Photo unavailable</div>` : ""}${canIgnore ? '<button class="obstacle-ignore" type="button">No need to avoid, ignore?</button><div class="obstacle-ignore-status" aria-live="polite"></div>' : ""}</div>`;
   const images = $$<HTMLImageElement>(".obstacle-photo", objectInfo);
   images.forEach((image, index) => {
     image.addEventListener("error", () => {
@@ -281,7 +283,7 @@ function showObjectInfo(marker: HTMLElement): void {
     try {
       await api(devicePath("obstacle-ignore"), { method: "POST", body: { photo_ids: photoIds } });
       ignoreButton.remove();
-      const statusBadge = objectInfo.querySelector<HTMLElement>(".obstacle-info-badges span:nth-child(2)");
+      const statusBadge = objectInfo.querySelector<HTMLElement>(".obstacle-state");
       if (statusBadge) statusBadge.textContent = "Ignored";
       if (status) status.textContent = "Roborock has been asked to ignore this object.";
     } catch (error) {
@@ -292,10 +294,8 @@ function showObjectInfo(marker: HTMLElement): void {
   });
   activeMarker = marker;
   objectInfo.hidden = false;
-  const target = marker.getBoundingClientRect();
-  const box = stage.getBoundingClientRect();
-  objectInfo.style.left = `${Math.max(76, Math.min(box.width - 76, target.left + target.width / 2 - box.left))}px`;
-  objectInfo.style.top = `${Math.max(12, target.top - box.top - 10)}px`;
+  objectInfo.style.removeProperty("left");
+  objectInfo.style.removeProperty("top");
 }
 
 document.addEventListener("click", (e) => {
