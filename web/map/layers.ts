@@ -20,7 +20,7 @@ export const OBSTACLE_ICON: Record<ObstacleKind, string> = {
   clothes: "shirt",
   pet: "paw",
   furniture: "furniture",
-  obstacle: "dot", // something it steered around, type unknown
+  obstacle: "obstacle-cone",
 };
 
 export interface ObstacleGroup {
