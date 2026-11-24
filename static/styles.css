@@ -659,7 +659,8 @@ svg.i.tiny { width: 12px; height: 12px; }
 .thing.furniture { color: #64748b; }
 .thing.obstacle { width: 18px; height: 18px; color: #7d8799; border-width: 1.5px; box-shadow: 0 1px 4px rgba(15, 23, 42, 0.25); }
 .thing.obstacle svg { width: 8px; height: 8px; }
-.thing.cable, .thing.furniture, .thing.obstacle { width: 28px; height: 28px; background: transparent; border-color: transparent; box-shadow: none; }
+.thing:not(.goto) { background: transparent; border: 0; box-shadow: none; }
+.thing.cable, .thing.furniture, .thing.obstacle { width: 28px; height: 28px; }
 .thing.cable svg, .thing.furniture svg, .thing.obstacle svg { width: 28px; height: 28px; }
 .thing .count { position: absolute; top: -7px; right: -9px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 999px; background: var(--text); color: var(--card); font-size: 10px; font-weight: 800; line-height: 16px; text-align: center; font-style: normal; }
 .thing.goto { background: var(--accent); color: #fff; border-color: #fff; cursor: default; }
