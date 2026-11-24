@@ -649,7 +649,7 @@ svg.i.tiny { width: 12px; height: 12px; }
 .map-info .active-zone { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 2; stroke-dasharray: 7 5; vector-effect: non-scaling-stroke; }
 .map-info .goto-route { fill: none; stroke: var(--accent); stroke-width: 2.5; stroke-dasharray: 1 6; stroke-linecap: round; vector-effect: non-scaling-stroke; }
 .map-things { position: absolute; inset: 0; pointer-events: none; }
-.thing { position: absolute; transform: translate(-50%, -50%) scale(var(--inv, 1)); width: 28px; height: 28px; border-radius: 50%; background: var(--card); border: 2px solid currentColor; box-shadow: 0 2px 10px rgba(15, 23, 42, 0.28); display: grid; place-items: center; pointer-events: auto; cursor: help; }
+.thing { position: absolute; transform: translate(calc(-50% + var(--thing-offset-x, 0px)), calc(-50% + var(--thing-offset-y, 0px))) scale(var(--inv, 1)); width: 28px; height: 28px; border-radius: 50%; background: var(--card); border: 2px solid currentColor; box-shadow: 0 2px 10px rgba(15, 23, 42, 0.28); display: grid; place-items: center; pointer-events: auto; cursor: help; }
 .thing svg { width: 15px; height: 15px; stroke-width: 2.1; }
 .thing.cable { color: #d97706; }
 .thing.pet_waste { color: #b45309; }
