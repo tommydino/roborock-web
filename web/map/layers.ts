@@ -128,7 +128,7 @@ export function renderThings(): void {
   infoSvg.innerHTML = svg;
 
   const marker = (cls: string, x: number, y: number, title: string, ic: string, count = 1, photoIds: string[] = [], detail?: { objectIds: number[]; confidence: number | null; ignored: boolean; label: string }, offset = { x: 0, y: 0 }) =>
-    `<span class="thing ${cls}" role="button" tabindex="0" data-map-info="${esc(title)}" ${photoIds.length ? `data-photo-ids="${esc(JSON.stringify(photoIds))}` : ""} ${detail ? `data-obstacle-detail="${esc(JSON.stringify(detail))}` : ""} aria-label="${esc(title)}" style="left:${pct(x, m.width)};top:${pct(y, m.height)};--thing-offset-x:${offset.x}px;--thing-offset-y:${offset.y}px" title="${esc(title)}">${icon(ic)}${count > 1 ? `<b class="count">${count}</b>` : ""}</span>`;
+    `<span class="thing ${cls}" role="button" tabindex="0" data-map-info="${esc(title)}" ${photoIds.length ? `data-photo-ids="${esc(JSON.stringify(photoIds))}"` : ""} ${detail ? `data-obstacle-detail="${esc(JSON.stringify(detail))}"` : ""} aria-label="${esc(title)}" style="left:${pct(x, m.width)};top:${pct(y, m.height)};--thing-offset-x:${offset.x}px;--thing-offset-y:${offset.y}px" title="${esc(title)}">${icon(ic)}${count > 1 ? `<b class="count">${count}</b>` : ""}</span>`;
   const obstacleGroups = groupObstacles(m.obstacles ?? [], m.scale);
   const obstacleOffsets = spreadNearbyMarkerOffsets(obstacleGroups);
   thingsEl.innerHTML =
