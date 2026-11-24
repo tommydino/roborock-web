@@ -108,6 +108,8 @@ def parse_obstacle_photo_response(response: bytes) -> tuple[bytes, dict[str, int
 
         photo = None
         bbox = None
+        dimensions = None
+        corners = None
         offset = 0
         while offset + 8 <= len(data):
             block_type = int.from_bytes(data[offset:offset + 2], "little")
@@ -118,7 +120,12 @@ def parse_obstacle_photo_response(response: bytes) -> tuple[bytes, dict[str, int
                 break
             header = data[offset:offset + header_size]
             payload = data[offset + header_size:end]
-            if block_type == 4:
+            if block_type == 1 and len(payload) == 4:
+                dimensions = (int.from_bytes(payload[:2], "little"),
+                              int.from_bytes(payload[2:], "little"))
+            elif block_type == 2 and len(payload) == 8:
+                corners = tuple(int.from_bytes(payload[i:i + 2], "little") for i in range(0, 8, 2))
+            elif block_type == 4:
                 bbox = rectangle(header) or bbox
                 if not photo:
                     photo, nested_bbox = extract(payload, depth + 1)
@@ -128,6 +135,13 @@ def parse_obstacle_photo_response(response: bytes) -> tuple[bytes, dict[str, int
                 photo = nested_photo or photo
                 bbox = nested_bbox or bbox
             offset = end
+        if dimensions and corners:
+            width, height = dimensions
+            x1, y1, x2, y2 = corners
+            if (0 < width < 10000 and 0 < height < 10000
+                    and 0 <= x1 < x2 <= width and 0 <= y1 < y2 <= height):
+                bbox = {"imageWidth": width, "imageHeight": height,
+                        "x": x1, "y": y1, "w": x2 - x1, "h": y2 - y1}
         return photo, bbox
 
     photo, bbox = extract(response)
