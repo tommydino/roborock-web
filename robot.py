@@ -78,7 +78,7 @@ install_multipart_blob_decoder()
 
 def parse_obstacle_photo_response(response: bytes) -> tuple[bytes, dict[str, int] | None]:
     """Extract the photo and optional object rectangle from a V1 typed response."""
-    image_headers = (b"\\x89PNG\\r\\n\\x1a\\n", b"\\xff\\xd8\\xff")
+    image_headers = (b"\x89PNG\r\n\x1a\n", b"\xff\xd8\xff")
 
     def rectangle(header: bytes) -> dict[str, int] | None:
         if len(header) < 28:
@@ -98,7 +98,7 @@ def parse_obstacle_photo_response(response: bytes) -> tuple[bytes, dict[str, int
     def extract(data: bytes, depth: int = 0) -> tuple[bytes | None, dict[str, int] | None]:
         if not data or depth > 4:
             return None, None
-        if data.startswith(b"\\x1f\\x8b"):
+        if data.startswith(b"\x1f\x8b"):
             try:
                 return extract(gzip.decompress(data), depth + 1)
             except (OSError, EOFError):
