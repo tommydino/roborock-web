@@ -373,7 +373,10 @@ def _things(map_data: MapData) -> dict[str, Any]:
     # Roborock commonly exposes the same detection in both collections. Keep the
     # photo-bearing copy when their coordinates overlap; otherwise the generic
     # copy would consume the deduplication key and make the photo unreachable.
-    ignored = [*(map_data.ignored_obstacles_with_photo or []), *(map_data.ignored_obstacles or [])]
+    ignored = [
+        *(getattr(map_data, "ignored_obstacles_with_photo", None) or []),
+        *(getattr(map_data, "ignored_obstacles", None) or []),
+    ]
     ignored_positions = {(round(o.x), round(o.y)) for o in ignored}
     for o in [*(map_data.obstacles_with_photo or []), *(map_data.obstacles or []), *ignored]:
         q = px(o)
