@@ -35,6 +35,18 @@ class ObstaclePhotoBoxTest(unittest.TestCase):
         payload = block(4, header=detection_header()) + block(3, IMAGE)
         self.assertEqual(parse_obstacle_photo_response(gzip.compress(payload))[1]["x"], 100)
 
+    def test_saros_photo_uses_dimension_and_rectangle_payload_blocks(self):
+        # Observed on a Saros 20 Sonic: 640x480 with corners (23,222)-(283,313).
+        payload = (block(1, bytes.fromhex("8002e001"))
+                   + block(2, bytes.fromhex("1700de001b013901"))
+                   + block(3, IMAGE)
+                   + block(4, bytes.fromhex("ebb05c01")))
+        self.assertEqual(
+            parse_obstacle_photo_response(payload),
+            (IMAGE, {"imageWidth": 640, "imageHeight": 480,
+                     "x": 23, "y": 222, "w": 260, "h": 91}),
+        )
+
     def test_plain_image_has_no_invented_box(self):
         self.assertEqual(parse_obstacle_photo_response(IMAGE), (IMAGE, None))
 
