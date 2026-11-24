@@ -3,7 +3,6 @@ import unittest
 
 from robot import parse_obstacle_photo_response
 
-
 IMAGE = b"\xff\xd8\xff\xd9"
 
 
