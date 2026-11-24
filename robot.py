@@ -617,13 +617,23 @@ class DeviceController:
         selected = [by_photo_id.get(photo_id) for photo_id in photo_ids]
         if any(item is None for item in selected):
             raise ValueError("This obstacle is no longer on the current map. Refresh the map and try again.")
-        object_ids = sorted({
-            item["type"] for item in selected
-            if item is not None and type(item.get("type")) is int and not item.get("ignored")
-        })
-        if not object_ids:
-            raise ValueError("Roborock did not provide an object ID for this obstacle")
-        await self._p.command.send("app_ignore_dirty_objects", {"object_ids": object_ids})
+        map_id = self._p.status.current_map
+        if type(map_id) is not int:
+            raise ValueError("Roborock did not provide the current map ID")
+        points = []
+        for item in selected:
+            if item is None or item.get("ignored"):
+                continue
+            x, y, kind = item.get("origin_x"), item.get("origin_y"), item.get("type")
+            if not all(type(value) is int for value in (x, y, kind)):
+                raise ValueError("Roborock did not provide the object's position and type. Refresh the map.")
+            point = [2, x, y, kind]
+            if point not in points:
+                points.append(point)
+        if not points:
+            raise ValueError("This obstacle is already ignored")
+        # Roborock's own map object action sends [map ID, object position/type].
+        await self._p.command.send("set_ignore_identify_area", [[1, map_id], *points])
         return {"ok": True}
 
     def _refresh_soon(self) -> None:

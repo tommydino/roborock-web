@@ -389,6 +389,7 @@ def _things(map_data: MapData) -> dict[str, Any]:
         confidence = getattr(o.details, "confidence_level", None)
         obstacles.append({
             "x": q[0], "y": q[1], "kind": kind, "label": label,
+            "origin_x": round(o.x), "origin_y": round(o.y),
             "type": obstacle_type,
             "confidence": confidence if type(confidence) in (int, float) else None,
             "ignored": key in ignored_positions,
