@@ -6,7 +6,7 @@ import { api, devicePath } from "../api";
 import { $, $$, closest, cssVar, esc, icon, pct } from "../dom";
 import { S, type Layers } from "../state";
 import type { Obstacle, ObstacleKind, Polyline } from "../types";
-import { inner, mapImg, stage } from "./elements";
+import { inner, mapImg } from "./elements";
 import { planImage, sync3D } from "./views";
 
 const infoSvg = $<SVGSVGElement>("#map-info");
