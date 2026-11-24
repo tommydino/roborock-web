@@ -232,29 +232,81 @@ document.body.append(objectInfo);
 const photoViewer = document.createElement("dialog");
 photoViewer.className = "obstacle-photo-viewer";
 photoViewer.setAttribute("aria-label", "Obstacle photo");
-photoViewer.innerHTML = `<button class="obstacle-photo-close" type="button" aria-label="Close photo">&times;</button><button class="obstacle-photo-prev" type="button" aria-label="Previous photo">&#8249;</button><img alt=""><button class="obstacle-photo-next" type="button" aria-label="Next photo">&#8250;</button><div class="obstacle-photo-count"></div>`;
+photoViewer.innerHTML = `<button class="obstacle-photo-close" type="button" aria-label="Close photo">&times;</button><button class="obstacle-photo-prev" type="button" aria-label="Previous photo">&#8249;</button><div class="obstacle-photo-viewer-frame"><img alt=""><span class="obstacle-photo-bbox" hidden></span></div><button class="obstacle-photo-next" type="button" aria-label="Next photo">&#8250;</button><div class="obstacle-photo-count"></div>`;
 document.body.append(photoViewer);
 const viewerImage = photoViewer.querySelector<HTMLImageElement>("img")!;
+const viewerBBox = photoViewer.querySelector<HTMLElement>(".obstacle-photo-bbox")!;
 const viewerCount = photoViewer.querySelector<HTMLElement>(".obstacle-photo-count")!;
 const previousPhoto = photoViewer.querySelector<HTMLButtonElement>(".obstacle-photo-prev")!;
 const nextPhoto = photoViewer.querySelector<HTMLButtonElement>(".obstacle-photo-next")!;
-let viewerSources: string[] = [];
+type PhotoBBox = { imageWidth: number; imageHeight: number; x: number; y: number; w: number; h: number };
+type ViewerPhoto = { src: string; bbox: PhotoBBox | null };
+let viewerSources: ViewerPhoto[] = [];
 let viewerIndex = 0;
 let activeMarker: HTMLElement | null = null;
 
+function positionPhotoBBox(image: HTMLImageElement, overlay: HTMLElement, bbox: PhotoBBox | null): void {
+  const frame = image.parentElement;
+  if (!frame || !bbox || !image.naturalWidth || !image.naturalHeight || !frame.clientWidth || !frame.clientHeight) {
+    overlay.hidden = true;
+    return;
+  }
+  const scale = Math.min(frame.clientWidth / image.naturalWidth, frame.clientHeight / image.naturalHeight);
+  const imageLeft = (frame.clientWidth - image.naturalWidth * scale) / 2;
+  const imageTop = (frame.clientHeight - image.naturalHeight * scale) / 2;
+  const sourceScaleX = image.naturalWidth / bbox.imageWidth;
+  const sourceScaleY = image.naturalHeight / bbox.imageHeight;
+  overlay.style.left = `${imageLeft + bbox.x * sourceScaleX * scale}px`;
+  overlay.style.top = `${imageTop + bbox.y * sourceScaleY * scale}px`;
+  overlay.style.width = `${bbox.w * sourceScaleX * scale}px`;
+  overlay.style.height = `${bbox.h * sourceScaleY * scale}px`;
+  overlay.hidden = false;
+}
+
+function photoBBoxFromImage(image: HTMLImageElement): PhotoBBox | null {
+  try {
+    const value = JSON.parse(image.dataset.photoBbox ?? "null") as PhotoBBox | null;
+    return value && value.imageWidth > 0 && value.imageHeight > 0 ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+function updatePhotoBBoxPositions(): void {
+  objectInfo.querySelectorAll<HTMLImageElement>(".obstacle-photo").forEach((image) => {
+    const overlay = image.parentElement?.querySelector<HTMLElement>(".obstacle-photo-bbox");
+    if (overlay) positionPhotoBBox(image, overlay, photoBBoxFromImage(image));
+  });
+  if (photoViewer.open) positionPhotoBBox(viewerImage, viewerBBox, viewerSources[viewerIndex]?.bbox ?? null);
+}
+window.addEventListener("resize", updatePhotoBBoxPositions);
+
 function showViewerPhoto(index: number): void {
   viewerIndex = (index + viewerSources.length) % viewerSources.length;
-  viewerImage.src = viewerSources[viewerIndex];
+  const photo = viewerSources[viewerIndex];
+  viewerImage.src = photo.src;
   viewerImage.alt = `Photo of detected obstacle ${viewerIndex + 1} of ${viewerSources.length}`;
+  const placeBox = () => positionPhotoBBox(viewerImage, viewerBBox, photo.bbox);
+  viewerImage.onload = placeBox;
+  if (viewerImage.complete) placeBox();
   viewerCount.textContent = viewerSources.length > 1 ? `${viewerIndex + 1} / ${viewerSources.length}` : "";
   previousPhoto.hidden = nextPhoto.hidden = viewerSources.length < 2;
 }
 
 function openPhoto(images: HTMLImageElement[], index: number): void {
-  viewerSources = images.map((image) => image.currentSrc || image.src);
-  if (!viewerSources.length) return;
-  showViewerPhoto(index);
-  photoViewer.showModal();
+  const waitForImage = (image: HTMLImageElement) => image.complete && image.naturalWidth
+    ? Promise.resolve()
+    : new Promise<void>((resolve) => {
+      image.addEventListener("load", () => resolve(), { once: true });
+      image.addEventListener("error", () => resolve(), { once: true });
+    });
+  void Promise.all(images.map(waitForImage)).then(() => {
+    const readyImages = images.filter((image) => image.naturalWidth > 0);
+    viewerSources = readyImages.map((image) => ({ src: image.currentSrc || image.src, bbox: photoBBoxFromImage(image) }));
+    if (!viewerSources.length) return;
+    showViewerPhoto(Math.min(index, viewerSources.length - 1));
+    photoViewer.showModal();
+  });
 }
 
 photoViewer.querySelector(".obstacle-photo-close")?.addEventListener("click", () => photoViewer.close());
@@ -269,6 +321,7 @@ photoViewer.addEventListener("keydown", (e) => {
 });
 photoViewer.addEventListener("close", () => {
   viewerImage.removeAttribute("src");
+  viewerBBox.hidden = true;
   viewerSources = [];
 });
 
@@ -292,7 +345,7 @@ function showObjectInfo(marker: HTMLElement): void {
   } catch {
     // Ignore malformed marker data.
   }
-  const photos = photoIds.map((photoId, index) => `<img class="obstacle-photo" src="${devicePath("obstacle-photo")}?photo_id=${encodeURIComponent(photoId)}" alt="Photo of detected obstacle ${index + 1} of ${photoIds.length}">`).join("");
+  const photos = photoIds.map((photoId, index) => `<div class="obstacle-photo-frame"><img class="obstacle-photo" data-photo-url="${devicePath("obstacle-photo")}?photo_id=${encodeURIComponent(photoId)}" alt="Photo of detected obstacle ${index + 1} of ${photoIds.length}"><span class="obstacle-photo-bbox" hidden></span></div>`).join("");
   const obstacleKind = (Object.keys(OBSTACLE_ICON) as ObstacleKind[]).find((kind) => marker.classList.contains(kind)) ?? "obstacle";
   const rawLabel = (detail.label || "Detected object").trim();
   const isPedestal = /^pedestal$/i.test(rawLabel);
@@ -321,13 +374,29 @@ function showObjectInfo(marker: HTMLElement): void {
   images.forEach((image, index) => {
     image.addEventListener("error", () => {
       image.hidden = true;
+      const frame = image.parentElement;
+      if (frame) frame.hidden = true;
       if (images.every((item) => item.hidden)) {
         const error = objectInfo.querySelector<HTMLElement>(".obstacle-photo-error");
         if (error) error.hidden = false;
       }
     }, { once: true });
+    image.addEventListener("load", () => {
+      const overlay = image.parentElement?.querySelector<HTMLElement>(".obstacle-photo-bbox");
+      if (overlay) positionPhotoBBox(image, overlay, photoBBoxFromImage(image));
+    });
     image.addEventListener("click", () => openPhoto(images, index));
+    const url = image.dataset.photoUrl;
+    if (url) {
+      void fetch(url).then(async (response) => {
+        if (!response.ok) throw new Error("Obstacle photo unavailable");
+        image.dataset.photoBbox = response.headers.get("X-Obstacle-BBox") ?? "";
+        image.dataset.objectUrl = URL.createObjectURL(await response.blob());
+        image.src = image.dataset.objectUrl;
+      }).catch(() => image.dispatchEvent(new Event("error")));
+    }
   });
+
   const ignoreButton = objectInfo.querySelector<HTMLButtonElement>(".obstacle-ignore");
   ignoreButton?.addEventListener("click", async (event) => {
     event.stopPropagation();
