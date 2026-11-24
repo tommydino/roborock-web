@@ -378,7 +378,11 @@ def _things(map_data: MapData) -> dict[str, Any]:
         *(getattr(map_data, "ignored_obstacles", None) or []),
     ]
     ignored_positions = {(round(o.x), round(o.y)) for o in ignored}
-    for o in [*(map_data.obstacles_with_photo or []), *(map_data.obstacles or []), *ignored]:
+    # The robot may keep old detections in its map after the user ignores one.
+    # The official app removes these markers, so do not render either copy.
+    for o in [*(map_data.obstacles_with_photo or []), *(map_data.obstacles or [])]:
+        if (round(o.x), round(o.y)) in ignored_positions:
+            continue
         q = px(o)
         key = (round(q[0]), round(q[1]))
         if key in seen:

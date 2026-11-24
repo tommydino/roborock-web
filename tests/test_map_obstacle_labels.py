@@ -49,6 +49,24 @@ class MapObstacleLabelsTest(unittest.TestCase):
         self.assertEqual(result["obstacles"][0]["photo_id"], "photo-123")
         self.assertEqual((result["obstacles"][0]["origin_x"], result["obstacles"][0]["origin_y"]), (1234, 5678))
 
+    def test_ignored_object_is_hidden_even_when_old_detection_remains(self):
+        def obstacle(photo_name=None):
+            return SimpleNamespace(
+                x=1234, y=5678,
+                details=SimpleNamespace(type=2, description="Pedestal", photo_name=photo_name),
+                to_img=lambda _dimensions: SimpleNamespace(x=10, y=20),
+            )
+
+        map_data = SimpleNamespace(
+            image=SimpleNamespace(dimensions=object()),
+            obstacles=[obstacle()], obstacles_with_photo=[obstacle("old-photo")],
+            ignored_obstacles=[obstacle()], ignored_obstacles_with_photo=[],
+            path=None, mop_path=None, no_carpet_areas=[], zones=[],
+            goto=None, predicted_path=None,
+        )
+
+        self.assertEqual(_things(map_data)["obstacles"], [])
+
     def test_saros_36_byte_obstacle_record_restores_photo_id(self):
         photo_id = b"002OP8DjMLKGBRnX"
         record = bytearray(36)
