@@ -152,7 +152,9 @@ def photo_payload_diagnostic(response: bytes) -> str:
         if header_size < 8 or offset + header_size + payload_size > len(response):
             break
         header = response[offset + 8:offset + min(header_size, 64)]
-        parts.append(f"{kind}:{header_size}:{payload_size}:{header.hex()}")
+        small_payload = response[offset + header_size:offset + header_size + payload_size]
+        payload_hex = small_payload.hex() if kind != 3 and payload_size <= 16 else ""
+        parts.append(f"{kind}:{header_size}:{payload_size}:{header.hex()}:{payload_hex}")
         offset += header_size + payload_size
     return ";".join(parts) if parts else "no-typed-blocks"
 
