@@ -668,7 +668,10 @@ svg.i.tiny { width: 12px; height: 12px; }
 .obstacle-sheet-handle span { display: block; width: 58px; height: 6px; border-radius: 999px; background: rgba(255,255,255,.32); }
 .obstacle-sheet-body { padding: 4px 22px 6px; }
 .obstacle-title-row { display: flex; align-items: center; gap: 12px; }
-.obstacle-ai-logo { display: grid; flex: 0 0 50px; width: 50px; height: 50px; place-items: center; border-radius: 50%; background: #2468b2; color: #d4f2ff; font-size: 28px; font-weight: 500; line-height: 1; }
+.obstacle-category-icon { display: grid; flex: 0 0 50px; width: 50px; height: 50px; place-items: center; border-radius: 50%; background: #bd3d16; color: #fff; }
+.obstacle-category-icon.type-cable { background: #2468b2; }
+.obstacle-category-icon.type-furniture { background: #b36a0b; }
+.obstacle-category-glyph { width: 27px; height: 27px; stroke-width: 2.1; }
 .obstacle-heading-copy { min-width: 0; }
 .obstacle-info-title { color: #f6f7f8; font-size: 21px; font-weight: 700; text-align: left; }
 .obstacle-info-badges { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; margin-top: 2px; color: #9ba1a8; font-size: 13px; font-weight: 500; text-align: left; }
