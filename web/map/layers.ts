@@ -294,7 +294,7 @@ function showViewerPhoto(index: number): void {
 }
 
 function openPhoto(images: HTMLImageElement[], index: number): void {
-  const waitForImage = (image: HTMLImageElement) => image.complete && image.naturalWidth
+  const waitForImage = (image: HTMLImageElement) => image.complete
     ? Promise.resolve()
     : new Promise<void>((resolve) => {
       image.addEventListener("load", () => resolve(), { once: true });
