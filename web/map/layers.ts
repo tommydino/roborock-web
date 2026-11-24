@@ -71,6 +71,38 @@ export function groupObstacles(obstacles: Obstacle[], scale: number): ObstacleGr
   });
 }
 
+function spreadNearbyMarkerOffsets(groups: ObstacleGroup[]): { x: number; y: number }[] {
+  const rect = inner.getBoundingClientRect();
+  const offsets = groups.map(() => ({ x: 0, y: 0 }));
+  if (!rect.width || !rect.height || groups.length < 2) return offsets;
+  const centers = groups.map((g) => ({ x: (g.x / (S.map?.width ?? 1)) * rect.width, y: (g.y / (S.map?.height ?? 1)) * rect.height }));
+  const visited = new Set<number>();
+  for (let i = 0; i < groups.length; i++) {
+    if (visited.has(i)) continue;
+    const cluster: number[] = [];
+    const queue = [i];
+    visited.add(i);
+    while (queue.length) {
+      const current = queue.pop()!;
+      cluster.push(current);
+      for (let j = 0; j < groups.length; j++) {
+        if (visited.has(j)) continue;
+        if (Math.hypot(centers[current].x - centers[j].x, centers[current].y - centers[j].y) < 34) {
+          visited.add(j);
+          queue.push(j);
+        }
+      }
+    }
+    if (cluster.length < 2) continue;
+    const radius = Math.max(20, Math.min(34, cluster.length * 8));
+    cluster.forEach((groupIndex, slot) => {
+      const angle = -Math.PI / 2 + (slot * 2 * Math.PI) / cluster.length;
+      offsets[groupIndex] = { x: Math.cos(angle) * radius, y: Math.sin(angle) * radius };
+    });
+  }
+  return offsets;
+}
+
 const points = (line: Polyline) => line.map(([x, y]) => `${x},${y}`).join(" ");
 
 /** Redraw everything over the floor. Call when the map or the layers change. */
@@ -95,10 +127,12 @@ export function renderThings(): void {
   for (const line of m.goto_path ?? []) svg += `<polyline class="goto-route" points="${points(line)}"/>`;
   infoSvg.innerHTML = svg;
 
-  const marker = (cls: string, x: number, y: number, title: string, ic: string, count = 1, photoIds: string[] = [], detail?: { objectIds: number[]; confidence: number | null; ignored: boolean; label: string }) =>
-    `<span class="thing ${cls}" role="button" tabindex="0" data-map-info="${esc(title)}" ${photoIds.length ? `data-photo-ids="${esc(JSON.stringify(photoIds))}"` : ""} ${detail ? `data-obstacle-detail="${esc(JSON.stringify(detail))}"` : ""} aria-label="${esc(title)}" style="left:${pct(x, m.width)};top:${pct(y, m.height)}" title="${esc(title)}">${icon(ic)}${count > 1 ? `<b class="count">${count}</b>` : ""}</span>`;
+  const marker = (cls: string, x: number, y: number, title: string, ic: string, count = 1, photoIds: string[] = [], detail?: { objectIds: number[]; confidence: number | null; ignored: boolean; label: string }, offset = { x: 0, y: 0 }) =>
+    `<span class="thing ${cls}" role="button" tabindex="0" data-map-info="${esc(title)}" ${photoIds.length ? `data-photo-ids="${esc(JSON.stringify(photoIds))}` : ""} ${detail ? `data-obstacle-detail="${esc(JSON.stringify(detail))}` : ""} aria-label="${esc(title)}" style="left:${pct(x, m.width)};top:${pct(y, m.height)};--thing-offset-x:${offset.x}px;--thing-offset-y:${offset.y}px" title="${esc(title)}">${icon(ic)}${count > 1 ? `<b class="count">${count}</b>` : ""}</span>`;
+  const obstacleGroups = groupObstacles(m.obstacles ?? [], m.scale);
+  const obstacleOffsets = spreadNearbyMarkerOffsets(obstacleGroups);
   thingsEl.innerHTML =
-    groupObstacles(m.obstacles ?? [], m.scale).map((g) => marker(g.kind, g.x, g.y, g.title, OBSTACLE_ICON[g.kind], g.count, g.photoIds, g)).join("") +
+    obstacleGroups.map((g, index) => marker(g.kind, g.x, g.y, g.title, OBSTACLE_ICON[g.kind], g.count, g.photoIds, g, obstacleOffsets[index])).join("") +
     (m.goto ? marker("goto", m.goto[0], m.goto[1], "Where the robot is heading", "target") : "");
 
   carpetsImg.src = carpetImage() || "data:,";
