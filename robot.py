@@ -77,24 +77,28 @@ _LOGGER = logging.getLogger(__name__)
 install_multipart_blob_decoder()
 
 def parse_obstacle_photo_response(response: bytes) -> tuple[bytes, dict[str, int] | None]:
-    """Extract a photo and Roborock's object-detection rectangle from a V1 response.
+    """Extract the photo and optional object rectangle from a V1 typed response."""
+    image_headers = (b"\\x89PNG\\r\\n\\x1a\\n", b"\\xff\\xd8\\xff")
 
-    Some newer V1 responses include a type-4 image header with source dimensions
-    and the detected object's rectangle. Older responses contain only a JPEG/PNG.
-    """
-    image_headers = (b"\x89PNG\r\n\x1a\n", b"\xff\xd8\xff")
-
-    def image_at(data: bytes) -> bytes | None:
-        for marker in image_headers:
-            offset = data.find(marker)
-            if offset >= 0:
-                return data[offset:]
-        return None
+    def rectangle(header: bytes) -> dict[str, int] | None:
+        if len(header) < 28:
+            return None
+        width = int.from_bytes(header[8:10], "little")
+        height = int.from_bytes(header[10:12], "little")
+        x1 = int.from_bytes(header[20:22], "little")
+        y1 = int.from_bytes(header[22:24], "little")
+        x2 = int.from_bytes(header[24:26], "little")
+        y2 = int.from_bytes(header[26:28], "little")
+        if not (0 < width < 10000 and 0 < height < 10000
+                and 0 <= x1 < x2 <= width and 0 <= y1 < y2 <= height):
+            return None
+        return {"imageWidth": width, "imageHeight": height,
+                "x": x1, "y": y1, "w": x2 - x1, "h": y2 - y1}
 
     def extract(data: bytes, depth: int = 0) -> tuple[bytes | None, dict[str, int] | None]:
         if not data or depth > 4:
             return None, None
-        if data.startswith(b"\x1f\x8b"):
+        if data.startswith(b"\\x1f\\x8b"):
             try:
                 return extract(gzip.decompress(data), depth + 1)
             except (OSError, EOFError):
@@ -102,51 +106,29 @@ def parse_obstacle_photo_response(response: bytes) -> tuple[bytes, dict[str, int
         if data.startswith(image_headers):
             return data, None
 
-        # Inner V1 photo header: version:u16, header length:u16, type:u32.
-        if len(data) >= 36:
-            header_length = int.from_bytes(data[2:4], "little")
-            photo_type = int.from_bytes(data[4:8], "little")
-            if photo_type == 4 and 36 <= header_length <= len(data):
-                image_width = int.from_bytes(data[8:10], "little")
-                image_height = int.from_bytes(data[10:12], "little")
-                x1 = int.from_bytes(data[20:22], "little")
-                y1 = int.from_bytes(data[22:24], "little")
-                x2 = int.from_bytes(data[24:26], "little")
-                y2 = int.from_bytes(data[26:28], "little")
-                bbox = None
-                if (
-                    0 < image_width < 10000
-                    and 0 < image_height < 10000
-                    and 0 <= x1 < x2 <= image_width
-                    and 0 <= y1 < y2 <= image_height
-                ):
-                    bbox = {
-                        "imageWidth": image_width,
-                        "imageHeight": image_height,
-                        "x": x1,
-                        "y": y1,
-                        "w": x2 - x1,
-                        "h": y2 - y1,
-                    }
-                photo = image_at(data[header_length:])
-                if photo:
-                    return photo, bbox
-
-        # Roborock's typed photo envelope uses an 8-byte block header.
+        photo = None
+        bbox = None
         offset = 0
         while offset + 8 <= len(data):
-            block_type = int.from_bytes(data[offset : offset + 2], "little")
-            header_size = int.from_bytes(data[offset + 2 : offset + 4], "little")
-            payload_size = int.from_bytes(data[offset + 4 : offset + 8], "little")
+            block_type = int.from_bytes(data[offset:offset + 2], "little")
+            header_size = int.from_bytes(data[offset + 2:offset + 4], "little")
+            payload_size = int.from_bytes(data[offset + 4:offset + 8], "little")
             end = offset + header_size + payload_size
             if header_size < 8 or end > len(data):
                 break
-            if block_type == 3:
-                photo, bbox = extract(data[offset + header_size : end], depth + 1)
-                if photo:
-                    return photo, bbox
+            header = data[offset:offset + header_size]
+            payload = data[offset + header_size:end]
+            if block_type == 4:
+                bbox = rectangle(header) or bbox
+                if not photo:
+                    photo, nested_bbox = extract(payload, depth + 1)
+                    bbox = nested_bbox or bbox
+            elif block_type == 3:
+                nested_photo, nested_bbox = extract(payload, depth + 1)
+                photo = nested_photo or photo
+                bbox = nested_bbox or bbox
             offset = end
-        return None, None
+        return photo, bbox
 
     photo, bbox = extract(response)
     if photo:
