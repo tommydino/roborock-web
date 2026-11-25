@@ -1,4 +1,4 @@
-"""A simulated Qrevo S for trying the UI without a robot (`--demo`).
+"""A simulated Saros 20 Sonic for trying the UI without a robot (`--demo`).
 
 The map is built as a genuine Roborock map binary and goes through the same
 renderer as the real thing, so what you see here is what you get.
@@ -45,8 +45,9 @@ SPEED = 26.0  # blocks per second, sped up for the demo
 
 FAN = [("quiet", 101), ("balanced", 102), ("turbo", 103), ("max", 104), ("max_plus", 108), ("off", 105),
        ("smart_mode", 110), ("custom", 106)]
-WATER = [("off", 200), ("low", 201), ("medium", 202), ("high", 203), ("smart_mode", 209), ("custom", 204)]
-MOP = [("standard", 300), ("deep", 301), ("deep_plus", 303), ("fast", 304), ("smart_mode", 306), ("custom", 302)]
+WATER = [("off", 200), ("slight", 205), ("low", 201), ("gentle", 206), ("medium", 202),
+         ("moderate", 207), ("high", 203), ("extreme", 208), ("smart_mode", 209), ("custom", 204)]
+MOP = [("standard", 300), ("deep_plus", 303), ("fast", 304), ("smart_mode", 306), ("custom", 302)]
 PRESETS = {
     "vacuum": (102, 200, 300),
     "vac_and_mop": (102, 202, 300),
@@ -317,12 +318,13 @@ HISTORY += [(24 * d + 3, [17, 16, 20] if d % 2 else [17], d % 2 == 0) for d in r
 INTERVALS = {17: 2, 16: 3, 20: 3, 21: 3, 18: 7, 19: 7}  # days between cleans, per room
 
 
-def _history() -> tuple[History, list[tuple[float, float]]]:
+def _history() -> tuple[History, list[tuple[float, float]], dict[str, list[int]]]:
     """Made-up history for the demo, plus the path of its last run (which the map shows)."""
     history = History(None)
     renderer = MapRenderer()
     now = time.time()
     last: list[tuple[float, float]] = []
+    run_rooms: dict[str, list[int]] = {}
     for hours, rooms, mopped in reversed(HISTORY):
         last = _clean_path(rooms)
         clutter = [spot for spot, start, end in CLUTTER if start >= hours >= end]
@@ -338,19 +340,22 @@ def _history() -> tuple[History, list[tuple[float, float]]]:
             map_flag=0, source="demo", mode="vac_and_mop" if mopped else "vacuum",
             grid=grid_from_lines(lines, lines if mopped else [], LEFT, TOP + H - 1, W, H),
             route=route_from_map(rendered) if rendered else None,
+            start_type="app", wash_count=2 if mopped else 0,
+            dust_collected=mopped, avoid_count=2,
         )
+        run_rooms[run.id] = rooms
         history.add(run, map_asset(rendered) if rendered and run.route else None)
     history.created = history.runs[0].begin
     for rid, days in INTERVALS.items():
         history.set_interval(0, rid, days)
     for (x, y), name in CLUTTER_NAMES:
         history.name_suspect(0, LEFT + x, TOP + y, name)  # demo blocks (y up) to robot blocks
-    return history, last
+    return history, last, run_rooms
 
 
 class DemoController:
     def __init__(self) -> None:
-        self.duid = "demo-qrevo-s"
+        self.duid = "demo-saros-20-sonic"
         self._renderer = MapRenderer()
         self._map: RenderedMap | None = None
         self._map_key: tuple | None = None
@@ -358,10 +363,11 @@ class DemoController:
         self.battery = 100
         self.in_cleaning = "complete"
         self.fan, self.water, self.mop = PRESETS["vac_and_mop"]
+        self.cleaning_mode = "vac_and_mop"
         self.repeat = 1  # passes when cleaning everywhere
         self.pos = DOCKED_POS
         self.angle = 90.0
-        self.history, self.path = _history()
+        self.history, self.path, self._demo_run_rooms = _history()
         self.error: str | None = None  # set with the demo_error action, to try the error help
         self.dock_error: str | None = None
         self._fresh: tuple[tuple, dict[str, Any]] | None = None
@@ -396,6 +402,7 @@ class DemoController:
         # Things the robot "spotted" on its last run: (x mm, y mm, obstacle type code).
         self.obstacles = [
             (*_mm((40, 40)), 0),  # cable by the sofa
+            (*_mm((44, 40)), 0),  # second photo of the nearby cable cluster
             (*_mm((96, 63)), 2),  # shoes at the hallway door
             (*_mm((152, 40)), 1),  # pet waste in the kitchen
             (*_mm((50, 112)), 10),  # clothes in the bedroom
@@ -403,6 +410,7 @@ class DemoController:
             *((*_mm((x, 66)), 99) for x in (12, 15, 18, 22, 27, 31, 34)),
             *((*_mm((89, y)), 99) for y in (23, 27, 31)),
         ]
+        self.ignored_photo_ids: set[str] = set()
         self.no_carpet = [_rect_mm(74, 14, 84, 22)]  # "this corner of the rug isn't carpet"
         self.active_zone: tuple[int, int, int, int] | None = None
         self.goto_target: tuple[float, float] | None = None
@@ -466,6 +474,8 @@ class DemoController:
             self._go_dock()
 
     def _mode_name(self) -> str:
+        if self.cleaning_mode == "vac_then_mop" and self.water != 200 and self.fan != 105:
+            return "vac_then_mop"
         if self.fan == 110 or self.water == 209 or self.mop == 306:
             return "smart_mode"
         if self.fan == 106 or self.water == 204 or self.mop == 302:
@@ -592,7 +602,7 @@ class DemoController:
         }.get(st, "cleaning")
         mode = self._mode_name()
         return {
-            "duid": self.duid, "name": "Qrevo S (demo)", "model": "roborock.vacuum.a104", "product": "Qrevo S",
+            "duid": self.duid, "name": "Saros 20 Sonic", "model": "roborock.vacuum.saros20sonic", "product": "Saros 20 Sonic",
             "connected": True, "local": True, "state": st, "phase": phase,
             "links": {"local": True, "cloud": True, "ip": "192.168.1.42"},
             "job": self.in_cleaning != "complete", "job_type": self.in_cleaning,
@@ -600,14 +610,14 @@ class DemoController:
             "clean_area": round(self.clean_area, 1), "clean_percent": None,
             "error": self.error, "dock_error": self.dock_error, "map_flag": 0,
             "mode": {
-                "cleaning": mode, "cleaning_options": list(PRESETS),
+                "cleaning": mode, "cleaning_options": ["vacuum", "vac_and_mop", "vac_then_mop", "mop"],
                 "fan": self.fan, "fan_options": [{"code": c, "name": n} for n, c in FAN],
                 "water": self.water, "water_options": [{"code": c, "name": n} for n, c in WATER],
                 "mop": self.mop, "mop_options": [{"code": c, "name": n} for n, c in MOP],
                 "repeat": self.repeat,
             },
             "dock": {
-                "type": "qrevo_s_dock", "can_empty": True, "can_wash": True, "can_dry": True,
+                "type": "saros_dock", "can_empty": True, "can_wash": True, "can_dry": True,
                 "drying": False, "clean_water": "okay", "dirty_water": "okay", "dust_bag": "okay",
             },
         }
@@ -616,10 +626,23 @@ class DemoController:
         self._tick()
         m = self._rendered()
         names = {**self.names, **self.nicknames.get(self.duid)}
-        version = m.payload_version(names)
+        version = m.payload_version(names) + ":" + ",".join(sorted(self.ignored_photo_ids))
         if since and since == version:
             return {"available": True, "version": version, "unchanged": True}
         payload = m.as_payload(names, self.names, images=img != m.image_version)
+        # Demo photos are synthetic and never come from a user's account. Keep
+        # the same obstacle fields and photo endpoint as the live robot.
+        for obstacle in payload["obstacles"]:
+            kind = obstacle["kind"]
+            if kind not in ("cable", "shoes", "pet_waste", "clothes"):
+                continue
+            photo_id = "demo-cable-2" if kind == "cable" and obstacle["origin_x"] == _mm((44, 40))[0] else f"demo-{kind}"
+            if photo_id in self.ignored_photo_ids:
+                continue
+            obstacle.update(photo=True, photo_id=photo_id, confidence=75)
+        payload["obstacles"] = [o for o in payload["obstacles"] if not (
+            ("demo-cable-2" if o["kind"] == "cable" and o["origin_x"] == _mm((44, 40))[0]
+             else f"demo-{o['kind']}") in self.ignored_photo_ids)]
         payload.update(available=True, maps=[{"flag": 0, "name": "Home"}], current_map=0)
         return payload
 
@@ -636,7 +659,24 @@ class DemoController:
 
     async def run_detail(self, run_id: str) -> dict[str, Any] | None:
         self._tick()
-        return self.history.detail(run_id)
+        detail = self.history.detail(run_id)
+        if detail is None:
+            return None
+        rooms = self._demo_run_rooms.get(run_id, [17])
+        begin, end = detail["begin"], detail["end"]
+        span = max(1, end - begin)
+        timeline = [{"at": begin, "label": "Start selective room cleaning", "detail": "Vac & Mop"}]
+        for index, rid in enumerate(rooms):
+            timeline.append({"at": begin + int(span * (index + 1) / (len(rooms) + 2)),
+                             "label": f"Clean {ROOMS[rid][0]}", "detail": "Vacuum · ×1"})
+        if detail["wash_count"]:
+            timeline.extend([{"at": begin + int(span * .7), "label": "Wash Mop", "detail": "Warm Water"},
+                             {"at": begin + int(span * .78), "label": "Resume"}])
+        if detail["dust_collected"]:
+            timeline.append({"at": begin + int(span * .88), "label": "Auto Emptying"})
+        timeline.append({"at": end, "label": "Cleaning Finished"})
+        detail.update(device_timeline=sorted(timeline, key=lambda row: row["at"]), timeline_source="summary")
+        return detail
 
     async def runs(self) -> list[dict[str, Any]]:
         self._tick()
@@ -646,8 +686,30 @@ class DemoController:
         if not self.history.remove(run_id):
             raise ValueError("Cleaning run not found")
 
-    async def obstacle_photo(self, photo_id: str) -> tuple[bytes, str]:
-        raise ValueError("The demo robot has no obstacle photos")
+    async def obstacle_photo(self, photo_id: str) -> tuple[bytes, str, dict[str, int]]:
+        if photo_id not in {"demo-cable", "demo-cable-2", "demo-shoes", "demo-pet_waste", "demo-clothes"}:
+            raise ValueError("Demo photo not found")
+        kind = photo_id.removeprefix("demo-").replace("_", " ")
+        # Illustrative image with a visible demo label and a photo detection box.
+        svg = f'''<svg xmlns="http://www.w3.org/2000/svg" width="800" height="600" viewBox="0 0 800 600">
+<defs><linearGradient id="floor" x2="1" y2="1"><stop stop-color="#b5a28c"/><stop offset="1" stop-color="#755e4a"/></linearGradient></defs>
+<rect width="800" height="600" fill="#ccd3d9"/><path d="M0 280 800 230V600H0Z" fill="url(#floor)"/>
+<path d="M0 280 800 230" stroke="#f7f7f2" stroke-width="20"/>
+<ellipse cx="400" cy="430" rx="145" ry="67" fill="#263342" opacity=".25"/>
+<rect x="300" y="320" width="200" height="190" rx="40" fill="#344458"/>
+<text x="400" y="417" text-anchor="middle" fill="white" font-family="sans-serif" font-size="30">{kind.title()}</text>
+<rect x="24" y="24" width="215" height="48" rx="12" fill="#17202b"/>
+<text x="42" y="56" fill="white" font-family="sans-serif" font-size="23">DEMO IMAGE</text></svg>'''
+        return svg.encode(), "image/svg+xml", {"imageWidth": 800, "imageHeight": 600,
+                                                 "x": 285, "y": 305, "w": 230, "h": 215}
+
+    async def ignore_obstacle(self, photo_ids: list[str]) -> dict[str, Any]:
+        valid = {"demo-cable", "demo-cable-2", "demo-shoes", "demo-pet_waste", "demo-clothes"}
+        if not photo_ids or not set(photo_ids) <= valid:
+            raise ValueError("Select a demo obstacle photo")
+        self.ignored_photo_ids.update(photo_ids)
+        self._edit_rev += 1
+        return {"ok": True}
 
     async def suspects(self) -> dict[str, Any]:
         self._tick()
@@ -686,8 +748,8 @@ class DemoController:
             },
             "routines": [{"id": 1, "name": "After dinner"}, {"id": 2, "name": "Kitchen quick mop"}],
             "network": {"ip": "192.168.1.42", "ssid": "Home", "rssi": -52},
-            "device": {"duid": self.duid, "name": "Qrevo S (demo)", "model": "roborock.vacuum.a104",
-                       "product": "Qrevo S", "firmware": "02.18.52", "serial": "DEMO0000000000", "local": True},
+            "device": {"duid": self.duid, "name": "Saros 20 Sonic", "model": "roborock.vacuum.saros20sonic",
+                       "product": "Saros 20 Sonic", "firmware": "demo", "serial": "DEMO0000000000", "local": True},
         }
 
     async def action(self, name: str, params: dict[str, Any]) -> dict[str, Any]:
@@ -731,12 +793,16 @@ class DemoController:
                 self._set_passes(params["repeat"])
             case "set_cleaning_mode":
                 self.fan, self.water, self.mop = PRESETS[params["mode"]]
+                self.cleaning_mode = params["mode"]
             case "set_fan":
                 self.fan = int(params["code"])
+                self.cleaning_mode = "vac_and_mop"
             case "set_water":
                 self.water = int(params["code"])
+                self.cleaning_mode = "vac_and_mop"
             case "set_mop":
                 self.mop = int(params["code"])
+                self.cleaning_mode = "vac_and_mop"
             case "empty_bin":
                 self.state, self._busy_until = "emptying_the_bin", time.monotonic() + 6
             case "wash_mop":
@@ -827,7 +893,7 @@ class DemoService:
         pass
 
     async def devices(self) -> list[dict[str, Any]]:
-        return [{"duid": self._ctrl.duid, "name": "Qrevo S (demo)", "model": "roborock.vacuum.a104",
+        return [{"duid": self._ctrl.duid, "name": "Saros 20 Sonic", "model": "roborock.vacuum.saros20sonic",
                  "supported": True, "connected": True}]
 
     async def controller(self, duid: str) -> DemoController:
