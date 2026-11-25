@@ -2,7 +2,7 @@
 
 A calm web app for your Roborock robot vacuum that runs on your own computer. It's built for a big screen, with a live map you can pan, zoom and turn in 3D, and it works on a phone too.
 
-![The app with the demo robot: status, cleaning mode, the dock and the main buttons on the left, the live map on the right](docs/screenshot.png)
+![The app with the demo robot: status, cleaning mode, the dock and the main buttons on the left, the live map on the right](docs/saros-20-sonic-demo.png)
 
 Try it without a robot or an account: `./start.command --demo`.
 
