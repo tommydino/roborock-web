@@ -45,7 +45,7 @@ macOS: double-click **`start.command`**. On macOS or Linux, from a terminal:
 
 ```bash
 ./start.command            # your robot
-./start.command --demo     # a simulated Qrevo S, no account needed
+./start.command --demo     # a simulated Saros 20 Sonic, no account needed
 ```
 
 The first run sets up a Python environment and builds the interface. After that, the app opens at http://localhost:8765. (On Windows, run it under WSL; that hasn't been tested.)
