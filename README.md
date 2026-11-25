@@ -11,7 +11,7 @@ Try it without a robot or an account: `./start.command --demo`.
 - **Click rooms** to clean just those, **drag a zone**, or **click a spot** to send the robot there (**Esc** lets go of it again). Pick the passes above the button: 1–3 for rooms and zones (set when they start), 1 or 2 when cleaning everywhere. That one is the robot's own setting, shared with the Roborock app, so you can change it mid-clean too.
 - **Move and zoom** the map like Google Maps: two-finger swipe, pinch, drag.
 - **Three views**: the colour map, a **3D view** you can turn around, and a **floor plan** with room sizes.
-- **What the robot saw**: carpets, obstacles it spotted (cables, shoes, pet mess…), where it mopped, and its route, on every view.
+- **What the robot saw**: carpets, obstacles it spotted (cables, shoes, pet mess…), their photos when available, where it mopped, and its route, on every view.
 - **Edit the map**: invisible walls, no-go and no-mop zones, and merging, splitting or renaming rooms.
 - **Start / pause / resume / stop / dock / locate**.
 - **Cleaning mode**: Vacuum, Vac & Mop, Vac followed by Mop, Mop or Custom (SmartPlan is hidden; turn it back on in Settings → Appearance). You can also set suction, water flow and mop route.
@@ -91,7 +91,7 @@ Every view shows what the robot reports with its map. Use the **Layers** button 
 
 - **Cleaning path**: where it drove, with the stretches it mopped tinted blue.
 - **Carpets**: hatched on the flat maps, slightly raised rugs in 3D.
-- **Obstacles it spotted**: cables, shoes, clothes, pet waste, pets and more. Hover or click/tap an icon to see what the robot detected. If Roborock does not supply a name, the app explains that and shows the internal obstacle type code when available. If the robot took a photo, the popup points you to the Roborock app.
+- **Obstacles it spotted**: cables, shoes, clothes, pet waste, furniture, pedestals and more. Hover or click/tap an icon to see what the robot detected, its avoidance status and confidence when reported. If Roborock does not supply a name, the app explains that and shows the internal obstacle type code when available. Photos from the robot appear directly in the popup; if there are several, swipe or scroll through them. Click a photo to enlarge it. The full image is shown with a blue detection box when Roborock provides box coordinates. Photos and boxes depend on what the robot recorded for that object. The **No need to avoid, ignore?** action changes the robot's map and may not be individually reversible; use it only for an object you actually want the robot to ignore. Ignored objects are hidden from the live web map.
 - **Walls & zones**: invisible walls, no-go, no-mop and no-carpet zones.
 
 While it cleans a zone, the zone is outlined. When you send it to a spot, its target and planned route show up too.
