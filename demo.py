@@ -377,8 +377,9 @@ class DemoController:
         self._route_kind = ""
         self._last_tick = time.monotonic()
         self._busy_until = 0.0
-        self.clean_time = 0.0
-        self.clean_area = 0.0
+        latest = self.history.list()[0]
+        self.clean_time = float(latest["duration"] or 0)
+        self.clean_area = float(latest["area"] or 0)
         self.settings_state: dict[str, Any] = {
             "volume": 60,
             "dnd": {"enabled": True, "start": "22:00", "end": "08:00"},
@@ -607,7 +608,7 @@ class DemoController:
             "links": {"local": True, "cloud": True, "ip": "192.168.1.42"},
             "job": self.in_cleaning != "complete", "job_type": self.in_cleaning,
             "battery": round(self.battery), "clean_time": int(self.clean_time),
-            "clean_area": round(self.clean_area, 1), "clean_percent": None,
+            "clean_area": round(self.clean_area, 1), "clean_percent": 0 if phase == "docked" else None,
             "error": self.error, "dock_error": self.dock_error, "map_flag": 0,
             "mode": {
                 "cleaning": mode, "cleaning_options": ["vacuum", "vac_and_mop", "vac_then_mop", "mop"],
