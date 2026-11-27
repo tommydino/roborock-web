@@ -14,6 +14,48 @@ const PALETTE_SIZE = 12;
 
 let roomCache = { key: "", colours: new Map<number, RGB>() };
 
+// Room colours are a presentation preference, not a robot-map setting.  Keep them
+// in the browser so changing a colour never changes the map stored by Roborock.
+const ROOM_COLOURS_KEY = "room-colours";
+type RoomOverrides = Record<string, string>;
+const sessionOverrides = new Map<string, RoomOverrides>();
+
+function overridesKey(): string {
+  return `${ROOM_COLOURS_KEY}:${S.duid ?? "default"}:${S.map?.current_map ?? "default"}`;
+}
+
+function validColour(value: unknown): value is string {
+  return typeof value === "string" && /^#[0-9a-f]{6}$/i.test(value);
+}
+
+export function roomColourOverrides(): RoomOverrides {
+  const key = overridesKey();
+  try {
+    const saved = JSON.parse(localStorage.getItem(key) || "{}") as RoomOverrides;
+    const clean = Object.fromEntries(Object.entries(saved).filter(([, value]) => validColour(value)));
+    sessionOverrides.set(key, clean);
+    return clean;
+  } catch {
+    return sessionOverrides.get(key) ?? {};
+  }
+}
+
+/** Set a display-only override. Pass null to return to the automatic palette. */
+export function setRoomColour(id: number, value: string | null): void {
+  const colours = roomColourOverrides();
+  if (value && validColour(value)) colours[String(id)] = value;
+  else delete colours[String(id)];
+  sessionOverrides.set(overridesKey(), colours);
+  try {
+    localStorage.setItem(overridesKey(), JSON.stringify(colours));
+  } catch {
+    // A private browser window can block storage; sessionOverrides still preserves it until reload.
+  }
+  roomCache.key = "";
+  colourCache.key = "";
+  planCache.key = "";
+}
+
 /** Each room's colour. Rooms are taken in id order and given the first palette colour, from
  *  one picked by their id, that none of their neighbours already has. */
 export function roomColours(): Map<number, RGB> {
@@ -21,7 +63,8 @@ export function roomColours(): Map<number, RGB> {
   const m = S.map;
   if (!mask || !m) return new Map();
   const palette = Array.from({ length: PALETTE_SIZE }, (_, i) => hexRgb(cssVar(`--room-${i}`) || "#7c9cff"));
-  const key = `${m.mask.length}:${m.mask.slice(-48)}:${palette.join()}`;
+  const overrides = roomColourOverrides();
+  const key = `${m.mask.length}:${m.mask.slice(-48)}:${palette.join()}:${JSON.stringify(overrides)}`;
   if (roomCache.key === key) return roomCache.colours;
 
   const { w, h, data } = mask;
@@ -48,7 +91,7 @@ export function roomColours(): Map<number, RGB> {
     let pick = id % PALETTE_SIZE;
     for (let k = 0; k < PALETTE_SIZE && used.has(pick); k++) pick = (pick + 1) % PALETTE_SIZE;
     taken.set(id, pick);
-    colours.set(id, palette[pick]);
+    colours.set(id, validColour(overrides[String(id)]) ? hexRgb(overrides[String(id)]) : palette[pick]);
   }
   roomCache = { key, colours };
   return colours;
