@@ -5,7 +5,7 @@ import { clearMapHistory, closeMapHistory, compareMapSnapshots, mapEmpty, previe
 import { fitMap } from "./map/fit";
 import {
   clearEditPicks, deleteSelected, discardEdits, endEdit, mergeRooms, renameRoom, saveRestrictions,
-  setEditMode, setEditTool, splitRoom, startEdit, undoEdit,
+  resetRoomColour, setEditMode, setEditTool, splitRoom, startEdit, undoEdit,
 } from "./map/editor";
 import { centerOnRobot, resetView } from "./map/panzoom";
 import { get3D, setViewMode, show3D, syncViewChrome } from "./map/views";
@@ -168,6 +168,8 @@ document.addEventListener("click", async (e) => {
       return splitRoom(t);
     case "room-reset-name":
       return renameRoom("", t);
+    case "room-reset-colour":
+      return resetRoomColour();
     case "clear-sel":
       return clearPicks();
     default:

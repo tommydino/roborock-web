@@ -13,6 +13,7 @@ import { refreshMapOverlays, renderMapFoot, roomAt, saveMapSnapshotBeforeEdit, t
 import { inner, shapesSvg } from "./elements";
 import { applyView } from "./panzoom";
 import { setViewMode } from "./views";
+import { roomColourOverrides, setRoomColour } from "./paint";
 
 const EDIT_LIMIT = 68; // corner points the robot can store
 const RESTRICTION_LABEL: Record<RestrictionType, string> = { wall: "Invisible wall", no_go: "No-go zone", no_mop: "No-mop zone" };
@@ -440,12 +441,18 @@ export function renderEditFoot(): void {
     } else {
       if (document.activeElement?.id === "rename-input") return; // don't wipe what's being typed
       const room = m.rooms.find((r) => r.id === id);
+      const savedColour = roomColourOverrides()[String(id)] ?? "";
       html = `<form class="rename" id="rename-form">
           <input class="field" id="rename-input" maxlength="30" value="${esc(room?.name ?? "")}" placeholder="${esc(room?.original ?? "")}" aria-label="Room name" autocomplete="off">
           <button class="btn-small-primary" type="submit">Save name</button>
           ${room?.nickname ? `<button class="btn-soft" type="button" data-act="room-reset-name">Use “${esc(room.original)}”</button>` : ""}
         </form>
-        <span class="hint small">Only changes the name in this app. Rename it in the Roborock app to change it everywhere.</span>`;
+        <div class="room-colour">
+          <label for="room-colour">Room colour</label>
+          <input id="room-colour" type="color" value="${savedColour || "#7c9cff"}" data-room-colour="${id}" aria-label="Room colour">
+          <button class="btn-soft" type="button" data-act="room-reset-colour" ${savedColour ? "" : "disabled"}>Use automatic colour</button>
+        </div>
+        <span class="hint small">Colours are saved only in this browser and do not change the robot's map.</span>`;
     }
   }
   foot.innerHTML = html;
@@ -554,6 +561,20 @@ document.addEventListener("submit", (e) => {
   const submitter = (e as SubmitEvent).submitter;
   void renameRoom(name, submitter instanceof HTMLButtonElement ? submitter : null);
 });
+
+document.addEventListener("input", (e) => {
+  const input = e.target;
+  if (!(input instanceof HTMLInputElement) || !input.dataset.roomColour) return;
+  setRoomColour(Number(input.dataset.roomColour), input.value);
+  refreshMapOverlays();
+});
+
+export function resetRoomColour(): void {
+  const room = S.edit?.rooms[0];
+  if (!room) return;
+  setRoomColour(room, null);
+  refreshMapOverlays();
+}
 
 document.addEventListener("keydown", (e) => {
   const ed = S.edit;
